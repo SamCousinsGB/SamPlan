@@ -1,0 +1,217 @@
+:root {
+  --bg: #1e2127;
+  --panel: #2a2f38;
+  --panel-2: #353b46;
+  --line: #3d444f;
+  --text: #e6e9ef;
+  --muted: #9aa3b2;
+  --accent: #4f9dff;
+  --danger: #ff5d5d;
+  --toolbar-h: 48px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+  overflow: hidden;
+}
+
+/* ---------- Toolbar ---------- */
+#toolbar {
+  height: var(--toolbar-h);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  user-select: none;
+}
+
+.group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.group.push-right { margin-left: auto; }
+
+.brand {
+  font-size: 16px;
+  letter-spacing: 0.5px;
+  color: var(--accent);
+}
+
+#toolbar button,
+#toolbar select {
+  height: 30px;
+  padding: 0 10px;
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+#toolbar button:hover,
+#toolbar select:hover { background: #404756; }
+
+#toolbar button:active { transform: translateY(1px); }
+
+.mode-btn.is-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+#zoom-readout {
+  min-width: 46px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* ---------- Stage / canvas ---------- */
+#stage {
+  position: relative;
+  width: 100%;
+  height: calc(100% - var(--toolbar-h));
+  overflow: hidden;
+}
+
+#canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none; /* we handle gestures ourselves */
+}
+
+/* ---------- Floating box panel ---------- */
+.panel {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 200px;
+  padding: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.field input {
+  height: 30px;
+  padding: 0 8px;
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.field input[type="color"] {
+  padding: 2px;
+  height: 32px;
+  cursor: pointer;
+}
+
+button.danger {
+  height: 30px;
+  background: transparent;
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+button.danger:hover { background: rgba(255,93,93,0.12); }
+
+/* ---------- HUD ---------- */
+.hud {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  padding: 6px 10px;
+  background: rgba(20,22,28,0.78);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  pointer-events: none;
+  max-width: 60%;
+}
+
+/* ---------- Inline label editor ---------- */
+.inline-label {
+  position: absolute;
+  z-index: 5;
+  border: 2px solid var(--accent);
+  border-radius: 4px;
+  padding: 2px 4px;
+  background: #fff;
+  color: #111;
+  font-size: 13px;
+  text-align: center;
+  outline: none;
+}
+
+/* ---------- Dialog ---------- */
+dialog {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--text);
+  padding: 20px;
+  width: 340px;
+}
+dialog::backdrop { background: rgba(0,0,0,0.5); }
+
+dialog h2 { margin: 0 0 14px; font-size: 18px; }
+
+dialog .row { display: flex; gap: 10px; }
+dialog .row .field { flex: 1; }
+
+dialog .field { margin-bottom: 12px; color: var(--muted); }
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 6px 0 0;
+  padding: 0;
+}
+
+.dialog-actions button {
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+}
+.dialog-actions button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}

@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SamPlan — Floorplanner</title>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <header id="toolbar">
+    <div class="group">
+      <strong class="brand">SamPlan</strong>
+    </div>
+
+    <div class="group" role="radiogroup" aria-label="Mode">
+      <button id="mode-floor" class="mode-btn" data-mode="floor">Floor</button>
+      <button id="mode-edit" class="mode-btn is-active" data-mode="edit">Edit</button>
+    </div>
+
+    <div class="group">
+      <button id="btn-new">New</button>
+      <select id="plan-list" aria-label="Open plan" title="Open plan"></select>
+      <button id="btn-rename" title="Rename current plan">Rename</button>
+      <button id="btn-delete" title="Delete current plan">Delete</button>
+    </div>
+
+    <div class="group">
+      <button id="btn-export">Export</button>
+      <button id="btn-import">Import</button>
+      <input id="file-import" type="file" accept="application/json,.json" hidden />
+    </div>
+
+    <div class="group push-right">
+      <button id="btn-zoom-out" title="Zoom out">&minus;</button>
+      <span id="zoom-readout" title="Current zoom">100%</span>
+      <button id="btn-zoom-in" title="Zoom in">+</button>
+      <button id="btn-zoom-fit" title="Fit floor to view">Fit</button>
+    </div>
+  </header>
+
+  <main id="stage">
+    <canvas id="canvas"></canvas>
+
+    <!-- Floating selected-box property panel (hidden unless a box is selected) -->
+    <div id="box-panel" class="panel" hidden>
+      <label class="field">
+        <span>Label</span>
+        <input id="box-label" type="text" maxlength="60" />
+      </label>
+      <label class="field">
+        <span>Color</span>
+        <input id="box-color" type="color" />
+      </label>
+      <button id="box-delete" class="danger">Delete box</button>
+    </div>
+
+    <!-- Live readout (floor size / hints) -->
+    <div id="hud" class="hud" aria-live="polite"></div>
+
+    <!-- Inline label editor overlay -->
+    <input id="inline-label" class="inline-label" hidden />
+  </main>
+
+  <!-- Setup dialog for New plan -->
+  <dialog id="setup-dialog">
+    <form method="dialog" id="setup-form">
+      <h2>New floorplan</h2>
+      <label class="field">
+        <span>Plan name</span>
+        <input id="setup-name" type="text" value="Untitled" maxlength="60" required />
+      </label>
+      <label class="field">
+        <span>Grid size (px per cell)</span>
+        <input id="setup-cell" type="number" value="25" min="4" max="200" step="1" required />
+      </label>
+      <div class="row">
+        <label class="field">
+          <span>Floor width (cells)</span>
+          <input id="setup-w" type="number" value="20" min="1" max="500" step="1" required />
+        </label>
+        <label class="field">
+          <span>Floor height (cells)</span>
+          <input id="setup-h" type="number" value="15" min="1" max="500" step="1" required />
+        </label>
+      </div>
+      <menu class="dialog-actions">
+        <button value="cancel" type="button" id="setup-cancel">Cancel</button>
+        <button value="confirm" id="setup-create" class="primary">Create</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
