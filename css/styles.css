@@ -7,7 +7,7 @@
   --muted: #9aa3b2;
   --accent: #4f9dff;
   --danger: #ff5d5d;
-  --toolbar-h: 48px;
+  --toolbar-h: 46px;
 }
 
 * { box-sizing: border-box; }
@@ -26,56 +26,49 @@ html, body {
   height: var(--toolbar-h);
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 0 12px;
+  gap: 10px;
+  padding: 0 10px;
   background: var(--panel);
   border-bottom: 1px solid var(--line);
   user-select: none;
+  overflow-x: auto;
+  white-space: nowrap;
 }
 
-.group {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
+.group { display: flex; align-items: center; gap: 5px; }
 .group.push-right { margin-left: auto; }
-
-.brand {
-  font-size: 16px;
-  letter-spacing: 0.5px;
-  color: var(--accent);
-}
+.brand { font-size: 15px; letter-spacing: 0.5px; color: var(--accent); }
 
 #toolbar button,
 #toolbar select {
-  height: 30px;
-  padding: 0 10px;
+  height: 28px;
+  padding: 0 9px;
   background: var(--panel-2);
   color: var(--text);
   border: 1px solid var(--line);
   border-radius: 6px;
-  font-size: 13px;
+  font-size: 12.5px;
   cursor: pointer;
 }
-
-#toolbar button:hover,
-#toolbar select:hover { background: #404756; }
-
+#toolbar button:hover, #toolbar select:hover { background: #404756; }
 #toolbar button:active { transform: translateY(1px); }
 
-.mode-btn.is-active {
+.tool-btn.is-active,
+#btn-preview.is-active {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
   font-weight: 600;
 }
 
-#zoom-readout {
-  min-width: 46px;
-  text-align: center;
-  font-size: 13px;
-  color: var(--muted);
+#area-readout {
+  font-size: 12.5px;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 9px;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---------- Stage / canvas ---------- */
@@ -85,20 +78,41 @@ html, body {
   height: calc(100% - var(--toolbar-h));
   overflow: hidden;
 }
+#canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 
-#canvas {
-  display: block;
-  width: 100%;
-  height: 100%;
-  touch-action: none; /* we handle gestures ourselves */
+/* ---------- Furniture palette ---------- */
+.palette {
+  position: absolute;
+  top: 12px; left: 12px;
+  width: 188px;
+  max-height: calc(100% - 24px);
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+  padding: 10px;
 }
+.palette-head { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+.palette-head small { display: block; font-size: 10px; opacity: 0.7; margin-top: 2px; }
+.palette-cat { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--muted); margin: 8px 2px 4px; }
+.palette-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.palette-item {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 5px 3px; background: var(--panel-2);
+  border: 1px solid var(--line); border-radius: 7px; cursor: pointer;
+}
+.palette-item:hover { background: #404756; border-color: var(--accent); }
+.palette-item.is-active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.palette-item canvas { width: 54px; height: 40px; }
+.palette-item span { font-size: 9.5px; color: var(--muted); text-align: center; line-height: 1.1; }
 
-/* ---------- Floating box panel ---------- */
+/* ---------- Property panel ---------- */
 .panel {
   position: absolute;
-  top: 12px;
-  right: 12px;
-  width: 200px;
+  top: 12px; right: 12px;
+  width: 210px;
   padding: 12px;
   background: var(--panel);
   border: 1px solid var(--line);
@@ -108,110 +122,84 @@ html, body {
   flex-direction: column;
   gap: 10px;
 }
+.panel > div { display: flex; flex-direction: column; gap: 10px; }
 
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
-  color: var(--muted);
+.field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.field input, .field select {
+  height: 30px; padding: 0 8px; background: var(--panel-2); color: var(--text);
+  border: 1px solid var(--line); border-radius: 6px; font-size: 13px;
+}
+.field input[type="color"] { padding: 2px; height: 32px; cursor: pointer; }
+.field input[type="range"] { padding: 0; }
+
+.readout {
+  font-size: 12.5px; color: var(--text); background: var(--panel-2);
+  border: 1px solid var(--line); border-radius: 6px; padding: 7px 8px;
+  white-space: pre-line; font-variant-numeric: tabular-nums;
 }
 
-.field input {
-  height: 30px;
-  padding: 0 8px;
-  background: var(--panel-2);
-  color: var(--text);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  font-size: 13px;
+.panel button {
+  height: 30px; border-radius: 6px; border: 1px solid var(--line);
+  background: var(--panel-2); color: var(--text); cursor: pointer; font-size: 13px;
 }
-
-.field input[type="color"] {
-  padding: 2px;
-  height: 32px;
-  cursor: pointer;
-}
-
-button.danger {
-  height: 30px;
-  background: transparent;
-  color: var(--danger);
-  border: 1px solid var(--danger);
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 13px;
-}
+.panel button:hover { background: #404756; }
+button.danger { background: transparent; color: var(--danger); border-color: var(--danger); }
 button.danger:hover { background: rgba(255,93,93,0.12); }
 
-/* ---------- HUD ---------- */
+/* ---------- HUD / toast ---------- */
 .hud {
-  position: absolute;
-  left: 12px;
-  bottom: 12px;
-  padding: 6px 10px;
-  background: rgba(20,22,28,0.78);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  font-size: 12px;
-  color: var(--muted);
-  pointer-events: none;
-  max-width: 60%;
+  position: absolute; left: 12px; bottom: 12px;
+  padding: 6px 10px; background: rgba(20,22,28,0.78);
+  border: 1px solid var(--line); border-radius: 8px;
+  font-size: 12px; color: var(--muted); pointer-events: none; max-width: 60%;
+}
+.toast {
+  position: absolute; left: 50%; bottom: 24px; transform: translateX(-50%);
+  background: var(--accent); color: #fff; padding: 8px 16px; border-radius: 8px;
+  font-size: 13px; box-shadow: 0 6px 18px rgba(0,0,0,0.4); z-index: 10;
 }
 
-/* ---------- Inline label editor ---------- */
+/* ---------- inline label editor ---------- */
 .inline-label {
-  position: absolute;
-  z-index: 5;
-  border: 2px solid var(--accent);
-  border-radius: 4px;
-  padding: 2px 4px;
-  background: #fff;
-  color: #111;
-  font-size: 13px;
-  text-align: center;
-  outline: none;
+  position: absolute; z-index: 5; border: 2px solid var(--accent);
+  border-radius: 4px; padding: 2px 4px; background: #fff; color: #111;
+  font-size: 13px; text-align: center; outline: none;
 }
+
+/* ---------- view-only bar ---------- */
+.viewonly-bar {
+  position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 10px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  padding: 8px 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); z-index: 8;
+  font-size: 13px;
+}
+.viewonly-bar button {
+  height: 28px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--accent);
+  background: var(--accent); color: #fff; cursor: pointer; font-size: 12.5px;
+}
+.viewonly-bar button:last-child { background: var(--panel-2); border-color: var(--line); color: var(--text); }
+
+/* ---------- view-only layout ---------- */
+body.viewonly #toolbar,
+body.viewonly .palette,
+body.viewonly .panel,
+body.viewonly .hud { display: none; }
+body.viewonly #stage { height: 100%; }
 
 /* ---------- Dialog ---------- */
 dialog {
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--panel);
-  color: var(--text);
-  padding: 20px;
-  width: 340px;
+  border: 1px solid var(--line); border-radius: 12px;
+  background: var(--panel); color: var(--text); padding: 20px; width: 360px;
 }
 dialog::backdrop { background: rgba(0,0,0,0.5); }
-
 dialog h2 { margin: 0 0 14px; font-size: 18px; }
-
 dialog .row { display: flex; gap: 10px; }
 dialog .row .field { flex: 1; }
-
 dialog .field { margin-bottom: 12px; color: var(--muted); }
-
-.dialog-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin: 6px 0 0;
-  padding: 0;
-}
-
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin: 6px 0 0; padding: 0; }
 .dialog-actions button {
-  height: 32px;
-  padding: 0 14px;
-  border-radius: 6px;
-  border: 1px solid var(--line);
-  background: var(--panel-2);
-  color: var(--text);
-  cursor: pointer;
-  font-size: 13px;
+  height: 32px; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line);
+  background: var(--panel-2); color: var(--text); cursor: pointer; font-size: 13px;
 }
-.dialog-actions button.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-  font-weight: 600;
-}
+.dialog-actions button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }

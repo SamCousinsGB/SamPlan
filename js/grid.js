@@ -30,6 +30,17 @@ export function snap(v) {
   return Math.round(v);
 }
 
+// Fine-snap step (in cells) for the current plan: 1 / subdivisions.
+export function snapStep(plan) {
+  return 1 / (plan.grid?.sub || 1);
+}
+
+// Snap a fractional cell coord to the nearest multiple of `step` cells.
+export function snapTo(v, step) {
+  if (!step) return Math.round(v);
+  return Math.round(v / step) * step;
+}
+
 // Clamp a box rect (in cells) to stay within the floor bounds. Preserves size
 // where possible; if the box is larger than the floor it is pinned to 0.
 export function clampBoxToFloor(box, floor) {

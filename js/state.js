@@ -22,51 +22,111 @@ export function uid() {
   return `b${Date.now().toString(36)}${(idSeq++).toString(36)}`;
 }
 
-export function makePlan({ name = "Untitled", cell = 25, w = 20, h = 15 } = {}) {
+export function makePlan({
+  name = "Untitled", address = "",
+  cellMeters = 0.05, sub = 2,
+  wCells = 160, hCells = 120, units = "dual",
+} = {}) {
   return {
     id: `p${Date.now().toString(36)}`,
     name,
-    grid: { cell },
-    floor: { w, h },
-    boxes: [],
+    meta: { address },
+    grid: { cell: 12, sub },          // cell = screen px at zoom 1; sub = fine-snap subdivisions
+    scale: { cellMeters },            // canonical real metres per cell
+    units,                            // "dual" | "m" | "ft"
+    floor: { w: wCells, h: hCells },  // soft property extent (initial view + faint editor guide)
+    rooms: [                          // start from one default room covering the floor
+      { id: uid(), x: 0, y: 0, w: wCells, h: hCells, name: "", group: null, color: DEFAULT_COLORS[0] },
+    ],
+    furniture: [],
+    compass: null,
     view: { zoom: 1, panX: 40, panY: 40 },
+    options: { showFurniture: true, showWallDims: true },
   };
 }
 
-// ---- Validation / migration on load (defensive against hand-edited JSON) ----
+// ---- Validation / migration on load (defensive + back-compat with v1 plans) ----
 export function normalizePlan(raw) {
   const p = raw && typeof raw === "object" ? raw : {};
-  const cell = clampNum(p.grid?.cell, 4, 200, 25);
-  const out = {
+  const floor = {
+    w: clampInt(p.floor?.w, 1, 5000, 160),
+    h: clampInt(p.floor?.h, 1, 5000, 120),
+  };
+
+  // Rooms: prefer new `rooms`; else migrate legacy `boxes`; else one default room.
+  let rooms;
+  if (Array.isArray(p.rooms) && p.rooms.length) {
+    rooms = p.rooms.map(normalizeRoom).filter(Boolean);
+  } else if (Array.isArray(p.boxes) && p.boxes.length) {
+    rooms = p.boxes.map((b) => normalizeRoom({ ...b, name: b.label })).filter(Boolean);
+  } else {
+    rooms = [{ id: uid(), x: 0, y: 0, w: floor.w, h: floor.h, name: "", group: null,
+               color: DEFAULT_COLORS[0] }];
+  }
+
+  return {
     id: typeof p.id === "string" ? p.id : `p${Date.now().toString(36)}`,
     name: typeof p.name === "string" && p.name.trim() ? p.name : "Untitled",
-    grid: { cell },
-    floor: {
-      w: clampNum(p.floor?.w, 1, 1000, 20),
-      h: clampNum(p.floor?.h, 1, 1000, 15),
+    meta: { address: typeof p.meta?.address === "string" ? p.meta.address : "" },
+    grid: {
+      cell: clampNum(p.grid?.cell, 4, 200, 12),
+      sub: clampInt(p.grid?.sub, 1, 10, 2),
     },
-    boxes: Array.isArray(p.boxes) ? p.boxes.map(normalizeBox).filter(Boolean) : [],
+    scale: { cellMeters: clampNum(p.scale?.cellMeters, 0.005, 5, 0.05) },
+    units: ["dual", "m", "ft"].includes(p.units) ? p.units : "dual",
+    floor,
+    rooms,
+    furniture: Array.isArray(p.furniture) ? p.furniture.map(normalizeFurniture).filter(Boolean) : [],
+    compass: normalizeCompass(p.compass),
     view: {
-      zoom: clampNum(p.view?.zoom, 0.1, 8, 1),
+      zoom: clampNum(p.view?.zoom, 0.05, 12, 1),
       panX: Number.isFinite(p.view?.panX) ? p.view.panX : 40,
       panY: Number.isFinite(p.view?.panY) ? p.view.panY : 40,
     },
+    options: {
+      showFurniture: p.options?.showFurniture !== false,
+      showWallDims: p.options?.showWallDims !== false,
+    },
   };
-  return out;
 }
 
-function normalizeBox(b) {
-  if (!b || typeof b !== "object") return null;
-  const x = clampNum(b.x, 0, 100000, 0);
-  const y = clampNum(b.y, 0, 100000, 0);
-  const w = clampNum(b.w, 1, 100000, 1);
-  const h = clampNum(b.h, 1, 100000, 1);
+function normalizeRoom(r) {
+  if (!r || typeof r !== "object") return null;
   return {
-    id: typeof b.id === "string" ? b.id : uid(),
-    x, y, w, h,
-    label: typeof b.label === "string" ? b.label : "",
-    color: typeof b.color === "string" ? b.color : DEFAULT_COLORS[0],
+    id: typeof r.id === "string" ? r.id : uid(),
+    x: clampInt(r.x, 0, 100000, 0),
+    y: clampInt(r.y, 0, 100000, 0),
+    w: clampInt(r.w, 1, 100000, 1),
+    h: clampInt(r.h, 1, 100000, 1),
+    name: typeof r.name === "string" ? r.name : "",
+    group: typeof r.group === "string" ? r.group : null,
+    color: typeof r.color === "string" ? r.color : DEFAULT_COLORS[0],
   };
+}
+
+function normalizeFurniture(f) {
+  if (!f || typeof f !== "object" || typeof f.kind !== "string") return null;
+  const rot = ((Math.round((Number(f.rot) || 0) / 90) % 4) + 4) % 4 * 90;
+  return {
+    id: typeof f.id === "string" ? f.id : uid(),
+    kind: f.kind,
+    x: clampNum(f.x, -100000, 100000, 0),
+    y: clampNum(f.y, -100000, 100000, 0),
+    rot,
+  };
+}
+
+function normalizeCompass(c) {
+  if (!c || typeof c !== "object") return null;
+  return {
+    x: clampNum(c.x, -100000, 100000, 4),
+    y: clampNum(c.y, -100000, 100000, 4),
+    rot: Number.isFinite(c.rot) ? c.rot : 0,
+  };
+}
+
+function clampInt(v, min, max, fallback) {
+  return Math.round(clampNum(v, min, max, fallback));
 }
 
 function clampNum(v, min, max, fallback) {
