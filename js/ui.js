@@ -106,13 +106,34 @@ export function attachUI(app) {
       if (document.activeElement !== roomW) roomW.value = (r.w * rcm).toFixed(2);
       if (document.activeElement !== roomH) roomH.value = (r.h * rcm).toFixed(2);
       roomColor.value = toHex(r.color);
-      $("room-unmerge").hidden = !r.group;
-      const multi = ui.selIds?.length > 1;
+
+      const ids = ui.selIds?.length ? ui.selIds : [ui.selId];
+      const selRooms = app.plan.rooms.filter((x) => ids.includes(x.id));
+      const groupsOfSel = new Set(selRooms.map((x) => x.group || x.id));
+      const canMerge = ids.length >= 2 && groupsOfSel.size > 1;   // different groups -> mergeable
+      const grouped = selRooms.some((x) => x.group);
+
       const mergeBtn = $("room-merge");
-      mergeBtn.textContent = multi ? `Merge ${ui.selIds.length} rooms` : "Merge — shift-click rooms first";
-      mergeBtn.classList.toggle("primary", multi);
-      if (multi) {
-        roomDims.textContent = `${ui.selIds.length} rooms selected\nMerge to combine (open-plan)`;
+      if (canMerge) {
+        mergeBtn.hidden = false; mergeBtn.textContent = `Merge ${ids.length} rooms`; mergeBtn.classList.add("primary");
+      } else if (grouped) {
+        mergeBtn.hidden = true; mergeBtn.classList.remove("primary"); // already merged → Unmerge only
+      } else {
+        mergeBtn.hidden = false; mergeBtn.textContent = "Merge — shift-click rooms"; mergeBtn.classList.remove("primary");
+      }
+      $("room-unmerge").hidden = !grouped;
+
+      if (ids.length > 1) {
+        // combined area + bounding box of the multi-selection
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity, area = 0;
+        for (const x of selRooms) {
+          minX = Math.min(minX, x.x); minY = Math.min(minY, x.y);
+          maxX = Math.max(maxX, x.x + x.w); maxY = Math.max(maxY, x.y + x.h);
+          area += x.w * x.h;
+        }
+        const dims = fmtDims(app.plan, maxX - minX, maxY - minY).replace("\n", "  ");
+        const head = canMerge ? `${ids.length} rooms — shift-click, then Merge` : "Open-plan room";
+        roomDims.textContent = `${head}\n${fmtArea(app.plan, area)} · ${dims} max`;
       } else {
         const g = roomGroups(app.plan).find((gr) => gr.rooms.some((x) => x.id === r.id));
         const dims = g ? fmtDims(app.plan, g.bbox.w, g.bbox.h).replace("\n", "  ") : "";
