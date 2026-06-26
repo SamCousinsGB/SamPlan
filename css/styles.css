@@ -256,6 +256,12 @@ html, body {
 }
 .panel button:hover { background: var(--panel-2); border-color: #c4c9d8; }
 .panel button:active { transform: translateY(1px); }
+.panel button.primary {
+  background: linear-gradient(180deg, var(--accent-2), var(--accent));
+  color: #fff; border-color: transparent; font-weight: 600;
+  box-shadow: 0 3px 10px rgba(79, 70, 229, 0.3);
+}
+.panel button.primary:hover { filter: brightness(1.06); background: linear-gradient(180deg, var(--accent-2), var(--accent)); }
 button.danger { background: var(--panel); color: var(--danger); border-color: #f3c6cf; box-shadow: none; }
 button.danger:hover { background: var(--danger-soft); border-color: var(--danger); }
 

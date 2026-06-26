@@ -108,6 +108,9 @@ export function attachUI(app) {
       roomColor.value = toHex(r.color);
       $("room-unmerge").hidden = !r.group;
       const multi = ui.selIds?.length > 1;
+      const mergeBtn = $("room-merge");
+      mergeBtn.textContent = multi ? `Merge ${ui.selIds.length} rooms` : "Merge — shift-click rooms first";
+      mergeBtn.classList.toggle("primary", multi);
       if (multi) {
         roomDims.textContent = `${ui.selIds.length} rooms selected\nMerge to combine (open-plan)`;
       } else {

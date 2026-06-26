@@ -1,6 +1,6 @@
-// sw.js — offline app shell for SamPlan. Cache-first with background refresh
-// (stale-while-revalidate). Bump VERSION on each deploy to roll the cache.
-const VERSION = "samplan-v1";
+// sw.js — offline app shell for SamPlan. Network-first (always fresh when
+// online), falling back to the cache when offline. Bump VERSION on each deploy.
+const VERSION = "samplan-v2";
 const ASSETS = [
   "./",
   "./index.html",
@@ -37,18 +37,16 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   const req = e.request;
   if (req.method !== "GET" || !req.url.startsWith(self.location.origin)) return;
+  // Network-first so deploys land immediately; fall back to cache offline.
   e.respondWith(
-    caches.match(req).then((cached) => {
-      const network = fetch(req)
-        .then((res) => {
-          if (res && res.ok) {
-            const clone = res.clone();
-            caches.open(VERSION).then((c) => c.put(req, clone));
-          }
-          return res;
-        })
-        .catch(() => cached || caches.match("./index.html"));
-      return cached || network;
-    })
+    fetch(req)
+      .then((res) => {
+        if (res && res.ok) {
+          const clone = res.clone();
+          caches.open(VERSION).then((c) => c.put(req, clone));
+        }
+        return res;
+      })
+      .catch(() => caches.match(req).then((c) => c || caches.match("./index.html")))
   );
 });
