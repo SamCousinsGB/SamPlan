@@ -99,9 +99,10 @@ export function attachInput(app) {
       capture(e); return;
     }
 
-    // Resize handle of the currently selected room.
+    // Resize handle of the currently selected room (single rooms only — a merged
+    // group moves as one and is resized by unmerging first).
     const sr = selectedRoom(plan, ui);
-    if (sr) {
+    if (sr && (ui.selIds?.length || 1) <= 1) {
       const h = handleAt(plan, sr, pt.x, pt.y);
       if (h) { app.pushUndo(); drag = { type: "room-resize", handle: h, room: sr }; capture(e); return; }
     }
@@ -125,8 +126,8 @@ export function attachInput(app) {
       const hit = roomAt(plan, cell.x, cell.y);
       if (hit) {
         if (e.shiftKey) { toggleRoom(ui, hit.id); app.render(); app.refreshPanel?.(); return; }
-        select(ui, "room", hit.id); app.pushUndo();
-        drag = { type: "room-move", room: hit, gx: cell.x - hit.x, gy: cell.y - hit.y };
+        selectRoomOrGroup(ui, plan, hit); app.pushUndo();
+        drag = roomMoveDrag(plan, ui, hit, cell);
         capture(e); app.commit(); return;
       }
       // draw a new room (snaps to the adaptive grid)
@@ -140,8 +141,8 @@ export function attachInput(app) {
     const rHit = roomAt(plan, cell.x, cell.y);
     if (rHit) {
       if (e.shiftKey) { toggleRoom(ui, rHit.id); app.render(); app.refreshPanel?.(); return; }
-      select(ui, "room", rHit.id); app.pushUndo();
-      drag = { type: "room-move", room: rHit, gx: cell.x - rHit.x, gy: cell.y - rHit.y };
+      selectRoomOrGroup(ui, plan, rHit); app.pushUndo();
+      drag = roomMoveDrag(plan, ui, rHit, cell);
       capture(e); app.commit(); return;
     }
     if (ui.selType && !e.shiftKey) { clearSelection(ui); app.commit(); }
@@ -172,8 +173,13 @@ export function attachInput(app) {
         break;
       }
       case "room-move": {
-        drag.room.x = Math.max(0, snapTo(cell.x - drag.gx, step));
-        drag.room.y = Math.max(0, snapTo(cell.y - drag.gy, step));
+        const nx = snapTo(cell.x - drag.gx, step), ny = snapTo(cell.y - drag.gy, step);
+        let dx = nx - drag.ax, dy = ny - drag.ay;
+        // clamp so the whole group stays in bounds without distorting its shape
+        const minOx = Math.min(...drag.rooms.map((d) => d.ox));
+        const minOy = Math.min(...drag.rooms.map((d) => d.oy));
+        dx = Math.max(dx, -minOx); dy = Math.max(dy, -minOy);
+        for (const d of drag.rooms) { d.r.x = d.ox + dx; d.r.y = d.oy + dy; }
         app.render();
         break;
       }
@@ -352,6 +358,21 @@ export function attachInput(app) {
       ui.selIds.push(id);
       ui.selId = id;
     }
+  }
+  // A plain click selects the whole open-plan group (so it moves as one room);
+  // a click on an ungrouped room selects just that room.
+  function selectRoomOrGroup(ui, plan, room) {
+    if (room.group) {
+      ui.selType = "room"; ui.selId = room.id;
+      ui.selIds = plan.rooms.filter((r) => r.group === room.group).map((r) => r.id);
+    } else {
+      select(ui, "room", room.id);
+    }
+  }
+  // Build a move-drag that shifts every selected room together (rigidly).
+  function roomMoveDrag(plan, ui, anchor, cell) {
+    const rooms = plan.rooms.filter((r) => ui.selIds.includes(r.id)).map((r) => ({ r, ox: r.x, oy: r.y }));
+    return { type: "room-move", rooms, gx: cell.x - anchor.x, gy: cell.y - anchor.y, ax: anchor.x, ay: anchor.y };
   }
 
   function nudge(plan, ui, dx, dy) {

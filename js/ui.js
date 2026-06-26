@@ -108,6 +108,7 @@ export function attachUI(app) {
       roomColor.value = toHex(r.color);
 
       const ids = ui.selIds?.length ? ui.selIds : [ui.selId];
+      $("room-size-row").hidden = ids.length > 1; // no single W×D for an open-plan group
       const selRooms = app.plan.rooms.filter((x) => ids.includes(x.id));
       const groupsOfSel = new Set(selRooms.map((x) => x.group || x.id));
       const canMerge = ids.length >= 2 && groupsOfSel.size > 1;   // different groups -> mergeable
