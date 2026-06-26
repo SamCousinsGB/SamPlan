@@ -31,6 +31,8 @@ export function attachUI(app) {
   const panelFurn = $("panel-furn");
   const panelProp = $("panel-prop");
   const roomName = $("room-name");
+  const roomW = $("room-w");
+  const roomH = $("room-h");
   const roomDims = $("room-dims");
   const roomColor = $("room-color");
   const furnName = $("furn-name");
@@ -100,6 +102,9 @@ export function attachUI(app) {
       if (!r) { panel.hidden = true; return; }
       panelRoom.hidden = false;
       if (document.activeElement !== roomName) roomName.value = r.name || "";
+      const rcm = cellMeters(app.plan);
+      if (document.activeElement !== roomW) roomW.value = (r.w * rcm).toFixed(2);
+      if (document.activeElement !== roomH) roomH.value = (r.h * rcm).toFixed(2);
       roomColor.value = toHex(r.color);
       $("room-unmerge").hidden = !r.group;
       const g = roomGroups(app.plan).find((gr) => gr.rooms.some((x) => x.id === r.id));
@@ -228,6 +233,7 @@ export function attachUI(app) {
   previewBtn.addEventListener("click", () => { app.togglePreview(); closeMenu(); });
   dimsBtn.addEventListener("click", () => { app.toggleDimensions(); closeMenu(); });
   exportFurnBtn.addEventListener("click", () => { app.toggleExportFurniture(); closeMenu(); });
+  $("btn-walls").addEventListener("click", () => { closeMenu(); app.setWalls(); });
   unitOpts.forEach((b) =>
     b.addEventListener("click", () => { app.setUnits(b.dataset.unit); closeMenu(); }));
 
@@ -255,6 +261,9 @@ export function attachUI(app) {
     const r = app.plan.rooms.find((x) => x.id === app.ui.selId);
     if (r) { r.name = roomName.value; app.render(); app.save(); }
   });
+  const onRoomSize = () => app.setRoomSize(parseFloat(roomW.value), parseFloat(roomH.value));
+  roomW.addEventListener("input", onRoomSize);
+  roomH.addEventListener("input", onRoomSize);
   roomColor.addEventListener("input", () => {
     const r = app.plan.rooms.find((x) => x.id === app.ui.selId);
     if (r) { r.color = roomColor.value; app.render(); app.save(); }
@@ -274,7 +283,7 @@ export function attachUI(app) {
   $("setup-cancel").addEventListener("click", () => dialog.close());
   setupForm.addEventListener("submit", (e) => {
     if (e.submitter && e.submitter.id === "setup-cancel") return;
-    const cellMeters = 0.05; // 50 mm grid — fixed for simplicity
+    const cellMeters = parseFloat($("setup-grid").value) || 0.05; // grid precision
     const wM = clampNum(parseFloat($("setup-w").value), 1, 100, 8);
     const hM = clampNum(parseFloat($("setup-h").value), 1, 100, 6);
     app.newPlan({

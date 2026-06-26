@@ -1,0 +1,14 @@
+{
+  "name": "SamPlan — UK Floorplans",
+  "short_name": "SamPlan",
+  "description": "Draw UK floorplans — rooms, real dimensions, furniture and listing exports. Works offline.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#eef1f6",
+  "theme_color": "#4f46e5",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

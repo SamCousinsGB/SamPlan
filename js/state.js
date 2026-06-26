@@ -40,6 +40,7 @@ export function makePlan({
     property: [{ id: uid(), x: 0, y: 0, w: wCells, h: hCells }],
     rooms: [],                        // start empty — draw rooms inside the footprint
     furniture: [],
+    walls: { external: 100, internal: 75 }, // real wall thickness in mm
     view: { zoom: 1, panX: 40, panY: 40 },
     options: { showFurniture: true, showWallDims: true, exportFurniture: false },
   };
@@ -85,6 +86,10 @@ export function normalizePlan(raw) {
     floor,
     property,
     rooms,
+    walls: {
+      external: clampNum(p.walls?.external, 10, 600, 100),
+      internal: clampNum(p.walls?.internal, 10, 600, 75),
+    },
     furniture: Array.isArray(p.furniture) ? p.furniture.map(normalizeFurniture).filter(Boolean) : [],
     view: {
       zoom: clampNum(p.view?.zoom, 0.05, 12, 1),

@@ -141,6 +141,20 @@ app.toggleDimensions = () => {
   app.refreshToolButtons();
   app.commit();
 };
+// Set real wall thickness (mm), drawn to scale. Property outline reads as the
+// external building line; rooms inside read as internal/usable space.
+app.setWalls = () => {
+  const w = app.plan.walls;
+  const ext = prompt("External wall thickness (mm):", w.external);
+  if (ext === null) return;
+  const int = prompt("Internal wall thickness (mm):", w.internal);
+  if (int === null) return;
+  const e = parseFloat(ext), i = parseFloat(int);
+  if (Number.isFinite(e)) w.external = Math.min(600, Math.max(10, Math.round(e)));
+  if (Number.isFinite(i)) w.internal = Math.min(600, Math.max(10, Math.round(i)));
+  app.commit();
+  app.toast(`Walls: ${w.external} mm external · ${w.internal} mm internal`);
+};
 app.toggleExportFurniture = () => {
   app.plan.options.exportFurniture = !app.plan.options.exportFurniture;
   app.refreshToolButtons();
@@ -197,6 +211,17 @@ app.rotateSelected = () => {
   const after = furnitureCells(app.plan, f);
   f.x = cx - after.w / 2; f.y = cy - after.h / 2;
   app.commit();
+};
+// Exact size (metres) for the selected room, typed in the panel. Snaps to the
+// plan's grid precision (50/25/10 mm) — pick a finer grid for millimetre work.
+app.setRoomSize = (wM, hM) => {
+  if (app.ui.selType !== "room") return;
+  const r = app.plan.rooms.find((x) => x.id === app.ui.selId);
+  if (!r) return;
+  const cm = cellMeters(app.plan);
+  if (Number.isFinite(wM) && wM > 0) r.w = Math.max(1, Math.round(wM / cm));
+  if (Number.isFinite(hM) && hM > 0) r.h = Math.max(1, Math.round(hM / cm));
+  app.render(); app.save(); app.refreshArea?.(); app.refreshPanel?.();
 };
 app.flipSelected = () => {
   if (app.ui.selType !== "furniture") return;
@@ -330,3 +355,10 @@ async function boot() {
 }
 
 boot();
+
+// ---- offline / installable (PWA) ----
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js").catch((e) => console.warn("SW registration failed:", e));
+  });
+}

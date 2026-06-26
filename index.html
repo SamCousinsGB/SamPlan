@@ -2,8 +2,15 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>SamPlan — UK Floorplans</title>
+  <meta name="description" content="Draw UK floorplans — rooms, real dimensions, furniture and listing exports. Works offline." />
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#4f46e5" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="SamPlan" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="icon.svg" />
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
@@ -42,6 +49,7 @@
         <button id="btn-dims" class="menu-item check" role="menuitemcheckbox">Dimensions</button>
         <button id="btn-preview" class="menu-item check" role="menuitemcheckbox">Listing preview</button>
         <button id="btn-export-furn" class="menu-item check" role="menuitemcheckbox">Furniture in export</button>
+        <button id="btn-walls" class="menu-item" role="menuitem">Wall thickness…</button>
         <hr class="menu-sep" />
         <div class="menu-label">Units</div>
         <button class="menu-item check unit-opt" data-unit="m" role="menuitemradio">Metres</button>
@@ -65,6 +73,12 @@
       <div id="panel-room" hidden>
         <label class="field"><span>Room name</span>
           <input id="room-name" type="text" maxlength="40" /></label>
+        <div class="row">
+          <label class="field"><span>Width (m)</span>
+            <input id="room-w" type="number" min="0.1" max="100" step="0.01" /></label>
+          <label class="field"><span>Depth (m)</span>
+            <input id="room-h" type="number" min="0.1" max="100" step="0.01" /></label>
+        </div>
         <div class="readout" id="room-dims">—</div>
         <label class="field"><span>Colour</span>
           <input id="room-color" type="color" /></label>
@@ -118,6 +132,12 @@
         <label class="field"><span>Property depth (m)</span>
           <input id="setup-h" type="number" value="6" min="1" max="100" step="0.1" required /></label>
       </div>
+      <label class="field"><span>Precision (grid)</span>
+        <select id="setup-grid">
+          <option value="0.05" selected>50 mm — standard</option>
+          <option value="0.025">25 mm — fine</option>
+          <option value="0.01">10 mm — millimetre work (heavier)</option>
+        </select></label>
       <menu class="dialog-actions">
         <button value="cancel" type="button" id="setup-cancel">Cancel</button>
         <button value="confirm" id="setup-create" class="primary">Create</button>

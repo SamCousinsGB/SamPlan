@@ -275,8 +275,13 @@ function drawRoomLabel(ctx, plan, palette, g, cx, cy, s, fontScale = 1) {
 function drawWalls(ctx, plan, palette) {
   const s = cellPx(plan);
   const segs = wallSegments(plan);
-  const extW = clamp(s * 0.5, 2.5, 12);
-  const intW = clamp(s * 0.28, 1.2, 7);
+  // Real wall thickness (mm) drawn to scale, with a small floor so they stay
+  // visible when zoomed right out.
+  const cm = cellMeters(plan);
+  const extMm = plan.walls?.external ?? 100;
+  const intMm = plan.walls?.internal ?? 75;
+  const extW = Math.max(1.5, (extMm / 1000 / cm) * s);
+  const intW = Math.max(1, (intMm / 1000 / cm) * s);
   ctx.lineCap = "square";
 
   for (const [type, color, width] of [
