@@ -15,6 +15,7 @@ export function attachUI(app) {
   const planList = $("plan-list");
   const previewBtn = $("btn-preview");
   const dimsBtn = $("btn-dims");
+  const exportFurnBtn = $("btn-export-furn");
   const unitOpts = [...document.querySelectorAll(".unit-opt")];
   const moreBtn = $("btn-more");
   const morePop = $("more-pop");
@@ -34,6 +35,7 @@ export function attachUI(app) {
   const roomColor = $("room-color");
   const furnName = $("furn-name");
   const furnSize = $("furn-size");
+  const furnLabel = $("furn-label");
   const propW = $("prop-w");
   const propH = $("prop-h");
 
@@ -68,6 +70,7 @@ export function attachUI(app) {
     // Reflect view-option state on the More-menu items.
     dimsBtn.classList.toggle("is-on", !!app.plan.options.showWallDims);
     previewBtn.classList.toggle("is-on", !!app.ui.preview);
+    exportFurnBtn.classList.toggle("is-on", !!app.plan.options.exportFurniture);
     unitOpts.forEach((b) => b.classList.toggle("is-on", b.dataset.unit === app.plan.units));
     app.setHud("");
   };
@@ -109,6 +112,7 @@ export function attachUI(app) {
       const def = catalogue[f.kind];
       furnName.textContent = def ? def.name : f.kind;
       furnSize.textContent = def ? `${def.wmm} × ${def.hmm} mm` : "";
+      if (document.activeElement !== furnLabel) furnLabel.value = f.label || "";
     } else if (ui.selType === "property") {
       const r = app.plan.property.find((x) => x.id === ui.selId);
       if (!r) { panel.hidden = true; return; }
@@ -223,6 +227,7 @@ export function attachUI(app) {
   // ---------- view options (in the menu) ----------
   previewBtn.addEventListener("click", () => { app.togglePreview(); closeMenu(); });
   dimsBtn.addEventListener("click", () => { app.toggleDimensions(); closeMenu(); });
+  exportFurnBtn.addEventListener("click", () => { app.toggleExportFurniture(); closeMenu(); });
   unitOpts.forEach((b) =>
     b.addEventListener("click", () => { app.setUnits(b.dataset.unit); closeMenu(); }));
 
@@ -256,7 +261,9 @@ export function attachUI(app) {
   });
   $("room-delete").addEventListener("click", () => app.deleteSelected());
   $("furn-rotate").addEventListener("click", () => app.rotateSelected());
+  $("furn-flip").addEventListener("click", () => app.flipSelected());
   $("furn-delete").addEventListener("click", () => app.deleteSelected());
+  furnLabel.addEventListener("input", () => app.setFurnLabel(furnLabel.value));
 
   // ---------- setup dialog ----------
   app.openSetup = (firstRun = false) => {

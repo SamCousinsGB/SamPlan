@@ -4,7 +4,7 @@
 // property tool the footprint is inert — clicks fall through to rooms.
 
 import {
-  pxToCells, snapTo, snapStep, cellPx,
+  pxToCells, snapTo, snapStep, snapStepFine, cellPx,
   handleAt, handleCursor, resizeRect,
 } from "./grid.js";
 import { roomAt, propertyRectAt, propertyRects } from "./rooms.js";
@@ -49,8 +49,8 @@ export function attachInput(app) {
   // Clamp a resized rect into the x,y >= 0 region WITHOUT moving the opposite
   // edge: if the left/top edge crossed the origin, pin it to 0 and shrink the
   // span instead of keeping the (now wrong) width. Writes back onto `rect`.
-  function applyResize(rect, handle, cell) {
-    const r = resizeRect(rect, handle, Math.round(cell.x), Math.round(cell.y));
+  function applyResize(rect, handle, cell, step) {
+    const r = resizeRect(rect, handle, snapTo(cell.x, step), snapTo(cell.y, step));
     let { x, y, w, h } = r;
     if (x < 0) { w += x; x = 0; }
     if (y < 0) { h += y; y = 0; }
@@ -72,6 +72,7 @@ export function attachInput(app) {
     if (e.button !== 0) return;
 
     const cell = pxToCells(plan, pt.x, pt.y);
+    const step = snapStep(plan);
 
     // ---- property tool: edit the footprint rectangles (locked elsewhere) ----
     if (ui.tool === "property") {
@@ -84,8 +85,9 @@ export function attachInput(app) {
       if (hit) { select(ui, "property", hit.id); app.pushUndo();
         drag = { type: "prop-move", rect: hit, gx: cell.x - hit.x, gy: cell.y - hit.y };
         capture(e); app.commit(); return; }
-      ui.draft = { x: Math.round(cell.x), y: Math.round(cell.y), w: 0, h: 0 };
-      drag = { type: "prop-draw", ox: Math.round(cell.x), oy: Math.round(cell.y) };
+      const ox = snapTo(cell.x, step), oy = snapTo(cell.y, step);
+      ui.draft = { x: ox, y: oy, w: 0, h: 0 };
+      drag = { type: "prop-draw", ox, oy };
       capture(e); return;
     }
 
@@ -116,9 +118,10 @@ export function attachInput(app) {
       if (hit) { select(ui, "room", hit.id); app.pushUndo();
         drag = { type: "room-move", room: hit, gx: cell.x - hit.x, gy: cell.y - hit.y };
         capture(e); app.commit(); return; }
-      // draw a new room (whole-cell snap)
-      ui.draft = { x: Math.round(cell.x), y: Math.round(cell.y), w: 0, h: 0 };
-      drag = { type: "room-draw", ox: Math.round(cell.x), oy: Math.round(cell.y) };
+      // draw a new room (snaps to the adaptive grid)
+      const ox = snapTo(cell.x, step), oy = snapTo(cell.y, step);
+      ui.draft = { x: ox, y: oy, w: 0, h: 0 };
+      drag = { type: "room-draw", ox, oy };
       capture(e); return;
     }
 
@@ -148,7 +151,7 @@ export function attachInput(app) {
         app.render();
         break;
       case "room-draw": {
-        const cx = Math.round(cell.x), cy = Math.round(cell.y);
+        const cx = snapTo(cell.x, step), cy = snapTo(cell.y, step);
         const x = Math.max(0, Math.min(drag.ox, cx));
         const y = Math.max(0, Math.min(drag.oy, cy));
         ui.draft = { x, y, w: Math.abs(cx - drag.ox), h: Math.abs(cy - drag.oy) };
@@ -157,29 +160,31 @@ export function attachInput(app) {
         break;
       }
       case "room-move": {
-        drag.room.x = Math.max(0, Math.round(cell.x - drag.gx));
-        drag.room.y = Math.max(0, Math.round(cell.y - drag.gy));
+        drag.room.x = Math.max(0, snapTo(cell.x - drag.gx, step));
+        drag.room.y = Math.max(0, snapTo(cell.y - drag.gy, step));
         app.render();
         break;
       }
       case "room-resize": {
-        applyResize(drag.room, drag.handle, cell);
+        applyResize(drag.room, drag.handle, cell, step);
         app.setHud(`Room: ${app.fmtCells(drag.room.w)} × ${app.fmtCells(drag.room.h)}`);
         app.render();
         break;
       }
       case "furn-move": {
-        drag.item.x = snapTo(cell.x - drag.gx, step);
-        drag.item.y = snapTo(cell.y - drag.gy, step);
+        const fstep = snapStepFine(plan);
+        drag.item.x = snapTo(cell.x - drag.gx, fstep);
+        drag.item.y = snapTo(cell.y - drag.gy, fstep);
         app.render();
         break;
       }
       case "furn-resize": {
         const item = drag.item, def = catalogue[item.kind];
         if (!def) break;
+        const fstep = snapStepFine(plan);
         const bb = furnitureCells(plan, item);
         const r = resizeRect({ x: item.x, y: item.y, w: bb.w, h: bb.h },
-          drag.handle, snapTo(cell.x, step), snapTo(cell.y, step));
+          drag.handle, snapTo(cell.x, fstep), snapTo(cell.y, fstep));
         item.x = r.x; item.y = r.y;
         const cm = cellMeters(plan);
         const rotated = ((item.rot || 0) / 90) % 2 !== 0;
@@ -191,7 +196,7 @@ export function attachInput(app) {
         break;
       }
       case "prop-draw": {
-        const cx = Math.round(cell.x), cy = Math.round(cell.y);
+        const cx = snapTo(cell.x, step), cy = snapTo(cell.y, step);
         const x = Math.max(0, Math.min(drag.ox, cx));
         const y = Math.max(0, Math.min(drag.oy, cy));
         ui.draft = { x, y, w: Math.abs(cx - drag.ox), h: Math.abs(cy - drag.oy) };
@@ -200,13 +205,13 @@ export function attachInput(app) {
         break;
       }
       case "prop-move": {
-        drag.rect.x = Math.max(0, Math.round(cell.x - drag.gx));
-        drag.rect.y = Math.max(0, Math.round(cell.y - drag.gy));
+        drag.rect.x = Math.max(0, snapTo(cell.x - drag.gx, step));
+        drag.rect.y = Math.max(0, snapTo(cell.y - drag.gy, step));
         app.render();
         break;
       }
       case "prop-resize": {
-        applyResize(drag.rect, drag.handle, cell);
+        applyResize(drag.rect, drag.handle, cell, step);
         app.setHud(`Property section: ${app.fmtCells(drag.rect.w)} × ${app.fmtCells(drag.rect.h)}`);
         app.render();
         break;
@@ -293,6 +298,9 @@ export function attachInput(app) {
     if ((e.key === "r" || e.key === "R") && ui.selType === "furniture") {
       e.preventDefault(); app.rotateSelected(); return;
     }
+    if ((e.key === "f" || e.key === "F") && ui.selType === "furniture") {
+      e.preventDefault(); app.flipSelected(); return;
+    }
     if (e.key === "Enter" && ui.selType === "room") {
       e.preventDefault(); const r = plan.rooms.find((x) => x.id === ui.selId);
       if (r) app.beginLabelEdit(r); return;
@@ -323,8 +331,7 @@ export function attachInput(app) {
       if (r) { r.x = Math.max(0, r.x + dx); r.y = Math.max(0, r.y + dy); }
     } else if (ui.selType === "furniture") {
       const f = plan.furniture.find((x) => x.id === ui.selId);
-      const step = snapStep(plan);
-      if (f) { f.x += dx * step; f.y += dy * step; }
+      if (f) { f.x += dx; f.y += dy; } // nudge by one cell (50 mm)
     }
   }
 

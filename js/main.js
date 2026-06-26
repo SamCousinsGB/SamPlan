@@ -6,8 +6,8 @@ import { scheduleRender, resizeCanvas } from "./render.js";
 import { attachInput } from "./input.js";
 import { attachUI } from "./ui.js";
 import { catalogue, furnitureCells } from "./furniture.js";
-import { contentBounds } from "./rooms.js";
-import { pxToCells, snapTo, snapStep } from "./grid.js";
+import { contentBounds, propertyBounds } from "./rooms.js";
+import { pxToCells, snapTo, snapStepFine } from "./grid.js";
 import { cellMeters } from "./units.js";
 import * as store from "./state.js";
 import { exportImage as doExportImage } from "./export.js";
@@ -97,19 +97,25 @@ app.setTool = (tool) => {
   app.render();
 };
 
-// Add one piece of furniture at the centre of the current view, selected and
-// ready to drag. Called from the palette — one click adds exactly one item.
+// Add one piece of furniture near the centre of the view, but kept inside the
+// property footprint so it never lands on top of / outside a wall.
 app.addFurniture = (kind) => {
   const def = catalogue[kind];
   if (!def) return;
   const r = canvas.getBoundingClientRect();
   const c = pxToCells(app.plan, r.width / 2, r.height / 2);
-  const step = snapStep(app.plan);
+  const step = snapStepFine(app.plan);
   const w0 = def.wmm / 1000 / cellMeters(app.plan);
   const h0 = def.hmm / 1000 / cellMeters(app.plan);
+  let x = c.x - w0 / 2, y = c.y - h0 / 2;
+  const b = propertyBounds(app.plan);
+  if (b) {
+    x = w0 >= b.w ? b.x + (b.w - w0) / 2 : Math.min(Math.max(x, b.x), b.x + b.w - w0);
+    y = h0 >= b.h ? b.y + (b.h - h0) / 2 : Math.min(Math.max(y, b.y), b.y + b.h - h0);
+  }
   const item = {
-    id: store.uid(), kind, rot: 0,
-    x: snapTo(c.x - w0 / 2, step), y: snapTo(c.y - h0 / 2, step),
+    id: store.uid(), kind, rot: 0, scaleX: 1, scaleY: 1, flipX: false, label: "",
+    x: snapTo(x, step), y: snapTo(y, step),
   };
   app.pushUndo();
   app.plan.furniture.push(item);
@@ -121,6 +127,10 @@ app.setUnits = (u) => { app.plan.units = u; app.refreshToolButtons(); app.commit
 // Metres label for a cell count — used in the live draw/resize HUD.
 app.fmtCells = (cells) => `${(cells * cellMeters(app.plan)).toFixed(2)} m`;
 app.togglePreview = () => {
+  if (!app.ui.preview && !app.plan.rooms.length) {
+    app.toast("Add rooms first to preview the listing");
+    return;
+  }
   app.ui.preview = !app.ui.preview;
   if (app.ui.preview) { app.ui.selType = null; app.ui.selId = null; }
   app.refreshToolButtons();
@@ -130,6 +140,14 @@ app.toggleDimensions = () => {
   app.plan.options.showWallDims = !app.plan.options.showWallDims;
   app.refreshToolButtons();
   app.commit();
+};
+app.toggleExportFurniture = () => {
+  app.plan.options.exportFurniture = !app.plan.options.exportFurniture;
+  app.refreshToolButtons();
+  app.save();
+  app.toast(app.plan.options.exportFurniture
+    ? "Furniture will be included in exports"
+    : "Furniture left out of exports");
 };
 
 // ---- property footprint (edited only in the "property" tool) ----
@@ -180,6 +198,21 @@ app.rotateSelected = () => {
   f.x = cx - after.w / 2; f.y = cy - after.h / 2;
   app.commit();
 };
+app.flipSelected = () => {
+  if (app.ui.selType !== "furniture") return;
+  const f = app.plan.furniture.find((x) => x.id === app.ui.selId);
+  if (!f) return;
+  app.pushUndo();
+  f.flipX = !f.flipX;
+  app.commit();
+};
+app.setFurnLabel = (text) => {
+  if (app.ui.selType !== "furniture") return;
+  const f = app.plan.furniture.find((x) => x.id === app.ui.selId);
+  if (!f) return;
+  f.label = (text || "").slice(0, 40);
+  app.render(); app.save();
+};
 
 // ---- open-plan merge (connected cluster of touching rooms) ----
 function touching(a, b) {
@@ -221,7 +254,10 @@ app.unmergeSelected = () => {
 };
 
 // ---- export ----
-app.exportImage = (type) => doExportImage(app.plan, { type, includeFurniture: false });
+app.exportImage = (type) => {
+  if (!app.plan.rooms.length) { app.toast("Add rooms before exporting"); return; }
+  doExportImage(app.plan, { type, includeFurniture: app.plan.options.exportFurniture });
+};
 
 // ---- plan lifecycle ----
 app.setPlan = (plan, { fit = true } = {}) => {

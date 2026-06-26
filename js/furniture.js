@@ -155,11 +155,11 @@ function drawTVUnit(ctx, w, h) {
 }
 
 function drawDoor(ctx, w, h) {
-  // hinge at bottom-left, leaf opens up; swing arc radius = leaf length
-  const r = Math.min(w, h);
-  line(ctx, 0, h, 0, h - r);             // open leaf
+  // hinge at bottom-left, leaf open up the left edge; swing fills the whole box
+  // (a quarter ellipse) so the symbol scales with both width and height.
+  line(ctx, 0, h, 0, 0);                       // open leaf
   ctx.beginPath();
-  ctx.arc(0, h, r, -Math.PI / 2, 0);     // swing arc
+  ctx.ellipse(0, h, w, h, 0, -Math.PI / 2, 0); // swing arc
   ctx.stroke();
 }
 

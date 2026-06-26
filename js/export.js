@@ -29,6 +29,7 @@ export function renderToCanvas(plan, { pxWidth = 2400, includeFurniture = false 
   drawScene(ctx, fitted, {
     palette: PRINT, W: pxWidth, H,
     showGrid: false, showFurniture: includeFurniture, showDims: true, showSelection: false,
+    fontScale: pxWidth / 1000, // scale in-plan labels/dimensions up for print
   });
 
   drawTitleBlock(ctx, plan, { x: 0, y: H - titleH, w: pxWidth, h: titleH, scale });

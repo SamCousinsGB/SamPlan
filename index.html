@@ -41,6 +41,7 @@
         <hr class="menu-sep" />
         <button id="btn-dims" class="menu-item check" role="menuitemcheckbox">Dimensions</button>
         <button id="btn-preview" class="menu-item check" role="menuitemcheckbox">Listing preview</button>
+        <button id="btn-export-furn" class="menu-item check" role="menuitemcheckbox">Furniture in export</button>
         <hr class="menu-sep" />
         <div class="menu-label">Units</div>
         <button class="menu-item check unit-opt" data-unit="m" role="menuitemradio">Metres</button>
@@ -74,7 +75,12 @@
       <div id="panel-furn" hidden>
         <div class="readout" id="furn-name">—</div>
         <div class="readout" id="furn-size">—</div>
-        <button id="furn-rotate">Rotate 90° (R)</button>
+        <label class="field"><span>Label (optional)</span>
+          <input id="furn-label" type="text" maxlength="40" placeholder="e.g. Wardrobe" /></label>
+        <div class="row">
+          <button id="furn-rotate">Rotate (R)</button>
+          <button id="furn-flip">Flip (F)</button>
+        </div>
         <button id="furn-delete" class="danger">Delete</button>
       </div>
       <div id="panel-prop" hidden>

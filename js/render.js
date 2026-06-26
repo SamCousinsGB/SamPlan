@@ -1,7 +1,7 @@
 // render.js — all canvas drawing. The same `drawScene` renders both the dark
 // editor and the black-and-white listing/print output, selected by a palette.
 
-import { cellPx, cellsToPx, handlePoints, HANDLES } from "./grid.js";
+import { cellPx, cellsToPx, handlePoints, HANDLES, snapStep } from "./grid.js";
 import { roomGroups, wallSegments, propertyRects, propertyOutline, propertyBounds } from "./rooms.js";
 import { catalogue, furnitureCells } from "./furniture.js";
 import { fmtDims, fmtLen, cellMeters, niceScaleMetres } from "./units.js";
@@ -110,7 +110,7 @@ export function drawScene(ctx, plan, opts) {
     palette, W, H,
     showGrid = true, showProperty = false,
     showFurniture = true, showDims = true,
-    showSelection = false, ui = null,
+    showSelection = false, ui = null, fontScale = 1,
   } = opts;
 
   ctx.fillStyle = palette.bg;
@@ -118,10 +118,10 @@ export function drawScene(ctx, plan, opts) {
 
   if (showGrid && palette.grid) drawGrid(ctx, plan, palette, W, H);
   if (showProperty) drawPropertyLayer(ctx, plan, palette, ui, showDims);
-  drawRooms(ctx, plan, palette, ui);
-  if (showFurniture) drawFurniture(ctx, plan, palette);
+  drawRooms(ctx, plan, palette, ui, fontScale);
+  if (showFurniture) drawFurniture(ctx, plan, palette, fontScale);
   drawWalls(ctx, plan, palette);
-  if (showDims) drawWallDimensions(ctx, plan, palette);
+  if (showDims) drawWallDimensions(ctx, plan, palette, fontScale);
 
   if (showSelection && ui) {
     drawDraft(ctx, plan, ui);
@@ -197,16 +197,18 @@ function drawGrid(ctx, plan, palette, W, H) {
   const c0x = Math.floor(-o.x / s) - 1, c1x = Math.ceil((W - o.x) / s) + 1;
   const c0y = Math.floor(-o.y / s) - 1, c1y = Math.ceil((H - o.y) / s) + 1;
 
-  if (s >= 6) {
+  // minor lines at the snap increment, so the grid shows exactly where things snap
+  const step = snapStep(plan);
+  if (step * s >= 7 && step < major) {
     ctx.strokeStyle = palette.grid;
     ctx.lineWidth = 1;
     ctx.beginPath();
-    for (let cx = c0x; cx <= c1x; cx++) {
+    for (let cx = Math.ceil(c0x / step) * step; cx <= c1x; cx += step) {
       if (cx % major === 0) continue;
       const x = Math.round(o.x + cx * s) + 0.5;
       ctx.moveTo(x, 0); ctx.lineTo(x, H);
     }
-    for (let cy = c0y; cy <= c1y; cy++) {
+    for (let cy = Math.ceil(c0y / step) * step; cy <= c1y; cy += step) {
       if (cy % major === 0) continue;
       const y = Math.round(o.y + cy * s) + 0.5;
       ctx.moveTo(0, y); ctx.lineTo(W, y);
@@ -228,7 +230,7 @@ function drawGrid(ctx, plan, palette, W, H) {
   ctx.stroke();
 }
 
-function drawRooms(ctx, plan, palette, ui) {
+function drawRooms(ctx, plan, palette, ui, fontScale = 1) {
   const s = cellPx(plan);
   // fills — in the editor each room is tinted with its own colour; print stays white
   for (const r of plan.rooms) {
@@ -242,13 +244,13 @@ function drawRooms(ctx, plan, palette, ui) {
   for (const g of roomGroups(plan)) {
     if (ui && ui.editingLabelId === g.group) continue;
     const c = cellsToPx(plan, g.anchor.x, g.anchor.y);
-    drawRoomLabel(ctx, plan, palette, g, c.x, c.y, s);
+    drawRoomLabel(ctx, plan, palette, g, c.x, c.y, s, fontScale);
   }
 }
 
-function drawRoomLabel(ctx, plan, palette, g, cx, cy, s) {
-  const nameSize = Math.max(11, Math.min(20, s * 0.7));
-  const dimSize = Math.max(9, Math.min(14, s * 0.5));
+function drawRoomLabel(ctx, plan, palette, g, cx, cy, s, fontScale = 1) {
+  const nameSize = Math.max(11, Math.min(20, s * 0.7)) * fontScale;
+  const dimSize = Math.max(9, Math.min(14, s * 0.5)) * fontScale;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
 
@@ -296,7 +298,7 @@ function drawWalls(ctx, plan, palette) {
   ctx.lineCap = "butt";
 }
 
-function drawFurniture(ctx, plan, palette) {
+function drawFurniture(ctx, plan, palette, fontScale = 1) {
   const s = cellPx(plan);
   for (const item of plan.furniture) {
     const def = catalogue[item.kind];
@@ -308,6 +310,7 @@ function drawFurniture(ctx, plan, palette) {
     ctx.save();
     ctx.translate(center.x, center.y);
     ctx.rotate(((item.rot || 0) * Math.PI) / 180);
+    if (item.flipX) ctx.scale(-1, 1);            // mirror horizontally
     ctx.translate(-nw / 2, -nh / 2);
     ctx.strokeStyle = palette.furniture;
     ctx.fillStyle = palette.furnitureFill;
@@ -315,11 +318,32 @@ function drawFurniture(ctx, plan, palette) {
     ctx.lineJoin = "round";
     def.draw(ctx, nw, nh);
     ctx.restore();
+
+    // Optional label, laid along the item's longest axis so it fits: horizontal
+    // for wide pieces, vertical for tall ones. Shrinks if still too long.
+    if (item.label) {
+      const shortPx = Math.min(w, h) * s, longPx = Math.max(w, h) * s;
+      const vertical = h > w;
+      let size = Math.max(9, Math.min(s * 0.5, shortPx * 0.5)) * fontScale;
+      ctx.save();
+      ctx.translate(center.x, center.y);
+      if (vertical) ctx.rotate(-Math.PI / 2);
+      ctx.font = `600 ${size}px system-ui, sans-serif`;
+      const tw = ctx.measureText(item.label).width;
+      if (tw > longPx * 0.9) {
+        size *= (longPx * 0.9) / tw;
+        ctx.font = `600 ${size}px system-ui, sans-serif`;
+      }
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillStyle = palette.text;
+      ctx.fillText(item.label, 0, 0);
+      ctx.restore();
+    }
   }
 }
 
 // Running dimension lines along the top (widths) and left (heights) of the plan.
-function drawWallDimensions(ctx, plan, palette) {
+function drawWallDimensions(ctx, plan, palette, fontScale = 1) {
   if (!plan.rooms.length) return;
   const s = cellPx(plan);
   if (s < 5) return;
@@ -332,33 +356,34 @@ function drawWallDimensions(ctx, plan, palette) {
   }
   const xb = [...xs].sort((a, b) => a - b);
   const yb = [...ys].sort((a, b) => a - b);
-  const off = 22; // px outside the walls
+  const off = 22 * fontScale; // px outside the walls
+  const minGap = 14 * fontScale;
 
   ctx.strokeStyle = palette.dim;
   ctx.fillStyle = palette.dim;
-  ctx.lineWidth = 1;
-  ctx.font = "10px system-ui, sans-serif";
+  ctx.lineWidth = Math.max(1, fontScale);
+  ctx.font = `${Math.round(11 * fontScale)}px system-ui, sans-serif`;
 
   // top: width segments
   const topY = cellsToPx(plan, 0, minY).y - off;
   for (let i = 0; i < xb.length - 1; i++) {
     const a = cellsToPx(plan, xb[i], minY).x;
     const b = cellsToPx(plan, xb[i + 1], minY).x;
-    if (b - a < 14) continue;
-    dimLine(ctx, a, topY, b, topY, fmtLen(plan, xb[i + 1] - xb[i]), "h");
+    if (b - a < minGap) continue;
+    dimLine(ctx, a, topY, b, topY, fmtLen(plan, xb[i + 1] - xb[i]), "h", fontScale);
   }
   // left: height segments
   const leftX = cellsToPx(plan, minX, 0).x - off;
   for (let i = 0; i < yb.length - 1; i++) {
     const a = cellsToPx(plan, minX, yb[i]).y;
     const b = cellsToPx(plan, minX, yb[i + 1]).y;
-    if (b - a < 14) continue;
-    dimLine(ctx, leftX, a, leftX, b, fmtLen(plan, yb[i + 1] - yb[i]), "v");
+    if (b - a < minGap) continue;
+    dimLine(ctx, leftX, a, leftX, b, fmtLen(plan, yb[i + 1] - yb[i]), "v", fontScale);
   }
 }
 
-function dimLine(ctx, x1, y1, x2, y2, text, dir) {
-  const tick = 4;
+function dimLine(ctx, x1, y1, x2, y2, text, dir, fontScale = 1) {
+  const tick = 4 * fontScale, pad = 6 * fontScale;
   ctx.beginPath();
   ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
   if (dir === "h") {
@@ -374,9 +399,9 @@ function dimLine(ctx, x1, y1, x2, y2, text, dir) {
   ctx.textBaseline = "middle";
   const label = text.replace(/\n.*/, ""); // metric only on the tick line, keep compact
   if (dir === "h") {
-    ctx.fillText(label, (x1 + x2) / 2, y1 - 6);
+    ctx.fillText(label, (x1 + x2) / 2, y1 - pad);
   } else {
-    ctx.translate((x1 + x2) / 2 - 6, (y1 + y2) / 2);
+    ctx.translate((x1 + x2) / 2 - pad, (y1 + y2) / 2);
     ctx.rotate(-Math.PI / 2);
     ctx.fillText(label, 0, 0);
   }

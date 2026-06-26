@@ -41,7 +41,7 @@ export function makePlan({
     rooms: [],                        // start empty — draw rooms inside the footprint
     furniture: [],
     view: { zoom: 1, panX: 40, panY: 40 },
-    options: { showFurniture: true, showWallDims: true },
+    options: { showFurniture: true, showWallDims: true, exportFurniture: false },
   };
 }
 
@@ -94,6 +94,7 @@ export function normalizePlan(raw) {
     options: {
       showFurniture: p.options?.showFurniture !== false,
       showWallDims: p.options?.showWallDims !== false,
+      exportFurniture: p.options?.exportFurniture === true,
     },
   };
 }
@@ -134,6 +135,8 @@ function normalizeFurniture(f) {
     rot,
     scaleX: clampNum(f.scaleX, 0.1, 50, 1),
     scaleY: clampNum(f.scaleY, 0.1, 50, 1),
+    flipX: f.flipX === true,
+    label: typeof f.label === "string" ? f.label.slice(0, 40) : "",
   };
 }
 

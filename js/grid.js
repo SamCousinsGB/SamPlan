@@ -30,9 +30,33 @@ export function snap(v) {
   return Math.round(v);
 }
 
-// Fine-snap step (in cells) for the current plan: 1 / subdivisions.
+// Adaptive snap step (in cells), chosen from "nice" real-world increments so the
+// on-screen snap spacing stays comfortable: coarse when zoomed out (e.g. 0.5 m),
+// fine when zoomed in (down to 0.05 m). Every option is a whole number of cells,
+// which keeps room/property geometry on the integer lattice that wall-tracing needs.
 export function snapStep(plan) {
-  return 1 / (plan.grid?.sub || 1);
+  const cm = plan?.scale?.cellMeters || 0.05;
+  const s = cellPx(plan);
+  if (!s) return 1;
+  const targetM = 26 / (s / cm);                  // metres ≈ 26px on screen
+  const stepsM = [cm, 0.1, 0.25, 0.5, 1, 2, 5, 10];
+  let chosen = stepsM[stepsM.length - 1];
+  for (const m of stepsM) { if (m >= targetM - 1e-9) { chosen = m; break; } }
+  return Math.max(1, Math.round(chosen / cm));    // cells
+}
+
+// Finer snap for furniture (which needn't sit on the integer lattice) so small
+// pieces — doors, windows — can be positioned and resized precisely. Still
+// adaptive: coarse when zoomed out, down to 25 mm when zoomed in.
+export function snapStepFine(plan) {
+  const cm = plan?.scale?.cellMeters || 0.05;
+  const s = cellPx(plan);
+  if (!s) return 1;
+  const targetM = 11 / (s / cm);
+  const stepsM = [cm / 2, cm, 0.1, 0.25, 0.5, 1];
+  let chosen = stepsM[stepsM.length - 1];
+  for (const m of stepsM) { if (m >= targetM - 1e-9) { chosen = m; break; } }
+  return chosen / cm;                              // cells (may be 0.5)
 }
 
 // Snap a fractional cell coord to the nearest multiple of `step` cells.
