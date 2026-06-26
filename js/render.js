@@ -235,7 +235,7 @@ function drawRooms(ctx, plan, palette, ui, fontScale = 1) {
   // fills — in the editor each room is tinted with its own colour; print stays white
   for (const r of plan.rooms) {
     const p = cellsToPx(plan, r.x, r.y);
-    const sel = ui && ui.selType === "room" && ui.selId === r.id;
+    const sel = ui && ui.selType === "room" && ui.selIds?.includes(r.id);
     if (palette.tint) ctx.fillStyle = sel ? palette.roomFillSel : rgba(r.color, 0.13);
     else ctx.fillStyle = sel ? palette.roomFillSel : palette.roomFill;
     ctx.fillRect(p.x, p.y, r.w * s, r.h * s);
@@ -468,12 +468,18 @@ function drawSelection(ctx, plan, ui) {
   if (!ui.selType) return;
   const s = cellPx(plan);
   if (ui.selType === "room") {
-    const r = plan.rooms.find((x) => x.id === ui.selId);
-    if (!r) return;
-    const a = cellsToPx(plan, r.x, r.y);
+    const ids = ui.selIds?.length ? ui.selIds : (ui.selId ? [ui.selId] : []);
     ctx.strokeStyle = EDITOR.selection; ctx.lineWidth = 2;
-    ctx.strokeRect(a.x - 1, a.y - 1, r.w * s + 2, r.h * s + 2);
-    drawHandles(ctx, plan, r);
+    for (const id of ids) {
+      const r = plan.rooms.find((x) => x.id === id);
+      if (!r) continue;
+      const a = cellsToPx(plan, r.x, r.y);
+      ctx.strokeRect(a.x - 1, a.y - 1, r.w * s + 2, r.h * s + 2);
+    }
+    if (ids.length === 1) {
+      const r = plan.rooms.find((x) => x.id === ids[0]);
+      if (r) drawHandles(ctx, plan, r);
+    }
   } else if (ui.selType === "furniture") {
     const item = plan.furniture.find((x) => x.id === ui.selId);
     if (!item) return;

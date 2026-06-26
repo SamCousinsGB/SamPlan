@@ -123,9 +123,12 @@ export function attachInput(app) {
 
     if (ui.tool === "room") {
       const hit = roomAt(plan, cell.x, cell.y);
-      if (hit) { select(ui, "room", hit.id); app.pushUndo();
+      if (hit) {
+        if (e.shiftKey) { toggleRoom(ui, hit.id); app.render(); app.refreshPanel?.(); return; }
+        select(ui, "room", hit.id); app.pushUndo();
         drag = { type: "room-move", room: hit, gx: cell.x - hit.x, gy: cell.y - hit.y };
-        capture(e); app.commit(); return; }
+        capture(e); app.commit(); return;
+      }
       // draw a new room (snaps to the adaptive grid)
       const ox = snapTo(cell.x, step), oy = snapTo(cell.y, step);
       ui.draft = { x: ox, y: oy, w: 0, h: 0 };
@@ -136,11 +139,12 @@ export function attachInput(app) {
     // ---- ground state: select / move a room, or clear ----
     const rHit = roomAt(plan, cell.x, cell.y);
     if (rHit) {
+      if (e.shiftKey) { toggleRoom(ui, rHit.id); app.render(); app.refreshPanel?.(); return; }
       select(ui, "room", rHit.id); app.pushUndo();
       drag = { type: "room-move", room: rHit, gx: cell.x - rHit.x, gy: cell.y - rHit.y };
       capture(e); app.commit(); return;
     }
-    if (ui.selType) { clearSelection(ui); app.commit(); }
+    if (ui.selType && !e.shiftKey) { clearSelection(ui); app.commit(); }
   });
 
   // ---------------- pointer move ----------------
@@ -299,6 +303,8 @@ export function attachInput(app) {
       e.preventDefault(); e.shiftKey ? app.redo() : app.undo(); return;
     }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") { e.preventDefault(); app.redo(); return; }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c") { e.preventDefault(); app.copySelected(); return; }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "v") { e.preventDefault(); app.pasteClipboard(); return; }
 
     if (e.key === "Escape") {
       ui.draft = null;
@@ -331,13 +337,30 @@ export function attachInput(app) {
   });
 
   // ---- selection / mutation helpers ----
-  function select(ui, type, id) { ui.selType = type; ui.selId = id; }
-  function clearSelection(ui) { ui.selType = null; ui.selId = null; }
+  function select(ui, type, id) { ui.selType = type; ui.selId = id; ui.selIds = [id]; }
+  function clearSelection(ui) { ui.selType = null; ui.selId = null; ui.selIds = []; }
+  // Shift-click toggles a room in/out of the multi-selection (for open-plan merge).
+  function toggleRoom(ui, id) {
+    ui.selType = "room";
+    if (!Array.isArray(ui.selIds)) ui.selIds = [];
+    const i = ui.selIds.indexOf(id);
+    if (i >= 0) {
+      ui.selIds.splice(i, 1);
+      ui.selId = ui.selIds[ui.selIds.length - 1] || null;
+      if (!ui.selIds.length) ui.selType = null;
+    } else {
+      ui.selIds.push(id);
+      ui.selId = id;
+    }
+  }
 
   function nudge(plan, ui, dx, dy) {
     if (ui.selType === "room") {
-      const r = plan.rooms.find((x) => x.id === ui.selId);
-      if (r) { r.x = Math.max(0, r.x + dx); r.y = Math.max(0, r.y + dy); }
+      const ids = ui.selIds?.length ? ui.selIds : [ui.selId];
+      for (const id of ids) {
+        const r = plan.rooms.find((x) => x.id === id);
+        if (r) { r.x = Math.max(0, r.x + dx); r.y = Math.max(0, r.y + dy); }
+      }
     } else if (ui.selType === "property") {
       const r = selectedProp(plan, ui);
       if (r) { r.x = Math.max(0, r.x + dx); r.y = Math.max(0, r.y + dy); }

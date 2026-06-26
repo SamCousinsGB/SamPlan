@@ -19,7 +19,7 @@ const app = {
   canvas,
   plan: store.makePlan(),
   ui: {
-    tool: "room", selType: null, selId: null,
+    tool: "room", selType: null, selId: null, selIds: [],
     draft: null, editingLabelId: null, preview: false,
   },
   _undo: store.createUndo(),
@@ -56,14 +56,14 @@ app.undo = () => {
   const prev = app._undo.undo(app.plan);
   if (!prev) return;
   prev.id = app.plan.id; app.plan = prev;
-  app.ui.selType = null; app.ui.selId = null;
+  app.ui.selType = null; app.ui.selId = null; app.ui.selIds = [];
   app.commit();
 };
 app.redo = () => {
   const next = app._undo.redo(app.plan);
   if (!next) return;
   next.id = app.plan.id; app.plan = next;
-  app.ui.selType = null; app.ui.selId = null;
+  app.ui.selType = null; app.ui.selId = null; app.ui.selIds = [];
   app.commit();
 };
 
@@ -92,7 +92,7 @@ app.zoomFit = () => {
 app.setTool = (tool) => {
   app.ui.tool = tool;
   app.ui.draft = null;
-  app.ui.selType = null; app.ui.selId = null;
+  app.ui.selType = null; app.ui.selId = null; app.ui.selIds = [];
   app.refreshToolButtons();
   app.render();
 };
@@ -114,7 +114,8 @@ app.addFurniture = (kind) => {
     y = h0 >= b.h ? b.y + (b.h - h0) / 2 : Math.min(Math.max(y, b.y), b.y + b.h - h0);
   }
   const item = {
-    id: store.uid(), kind, rot: 0, scaleX: 1, scaleY: 1, flipX: false, flipY: false, label: "",
+    id: store.uid(), kind, rot: 0, scaleX: 1, scaleY: 1, flipX: false, flipY: false,
+    label: def.name,                       // default the label to the item's name
     x: snapTo(x, step), y: snapTo(y, step),
   };
   app.pushUndo();
@@ -132,7 +133,7 @@ app.togglePreview = () => {
     return;
   }
   app.ui.preview = !app.ui.preview;
-  if (app.ui.preview) { app.ui.selType = null; app.ui.selId = null; }
+  if (app.ui.preview) { app.ui.selType = null; app.ui.selId = null; app.ui.selIds = []; }
   app.refreshToolButtons();
   app.commit();
 };
@@ -194,10 +195,13 @@ app.deleteSelected = () => {
   const ui = app.ui;
   if (!ui.selType) return;
   app.pushUndo();
-  if (ui.selType === "room") app.plan.rooms = app.plan.rooms.filter((r) => r.id !== ui.selId);
+  if (ui.selType === "room") {
+    const ids = ui.selIds?.length ? ui.selIds : [ui.selId];
+    app.plan.rooms = app.plan.rooms.filter((r) => !ids.includes(r.id));
+  }
   else if (ui.selType === "furniture") app.plan.furniture = app.plan.furniture.filter((f) => f.id !== ui.selId);
   else if (ui.selType === "property") app.plan.property = app.plan.property.filter((r) => r.id !== ui.selId);
-  ui.selType = null; ui.selId = null;
+  ui.selType = null; ui.selId = null; ui.selIds = [];
   app.commit();
 };
 app.rotateSelected = () => {
@@ -239,43 +243,80 @@ app.setFurnLabel = (text) => {
   app.render(); app.save();
 };
 
-// ---- open-plan merge (connected cluster of touching rooms) ----
-function touching(a, b) {
-  const ax2 = a.x + a.w, ay2 = a.y + a.h, bx2 = b.x + b.w, by2 = b.y + b.h;
-  const h = (a.x === bx2 || ax2 === b.x) && (a.y < by2 && ay2 > b.y);
-  const v = (a.y === by2 || ay2 === b.y) && (a.x < bx2 && ax2 > b.x);
-  return h || v;
-}
+// ---- open-plan merge: merge exactly the rooms you shift-clicked, nothing else ----
+app.selectedRooms = () => {
+  const ids = app.ui.selType === "room" ? (app.ui.selIds || []) : [];
+  return app.plan.rooms.filter((r) => ids.includes(r.id));
+};
 app.mergeSelected = () => {
-  if (app.ui.selType !== "room") { app.toast("Select a room first"); return; }
-  const sel = app.plan.rooms.find((r) => r.id === app.ui.selId);
-  if (!sel) return;
-  const cluster = new Set([sel.id]);
-  let added = true;
-  while (added) {
-    added = false;
-    for (const r of app.plan.rooms) {
-      if (cluster.has(r.id)) continue;
-      for (const id of cluster) {
-        const o = app.plan.rooms.find((x) => x.id === id);
-        if (o && touching(r, o)) { cluster.add(r.id); added = true; break; }
-      }
-    }
-  }
-  if (cluster.size < 2) { app.toast("No adjacent room to merge with"); return; }
+  const rooms = app.selectedRooms();
+  if (rooms.length < 2) { app.toast("Shift-click two or more rooms, then Merge"); return; }
   app.pushUndo();
-  const group = sel.group || sel.id;
-  for (const r of app.plan.rooms) if (cluster.has(r.id)) r.group = group;
+  const primary = rooms.find((r) => r.id === app.ui.selId) || rooms[0];
+  // Reuse an existing group if any of the picked rooms already belongs to one.
+  const group = rooms.find((r) => r.group)?.group || primary.id;
+  const distinctNames = new Set(rooms.map((r) => (r.name || "").trim()).filter(Boolean));
+  for (const r of rooms) {
+    r.group = group;
+    r.color = primary.color;                  // unify colour so it reads as one room
+    if (distinctNames.size > 1) r.name = "";  // conflicting labels -> clear, re-label once
+  }
   app.commit();
-  app.toast("Rooms merged (open-plan)");
+  app.toast(`Merged ${rooms.length} rooms (open-plan)`);
 };
 app.unmergeSelected = () => {
-  if (app.ui.selType !== "room") return;
-  const r = app.plan.rooms.find((x) => x.id === app.ui.selId);
-  if (!r || !r.group) return;
+  const rooms = app.selectedRooms();
+  if (!rooms.some((r) => r.group)) return;
   app.pushUndo();
-  r.group = null;
+  for (const r of rooms) r.group = null;
   app.commit();
+};
+
+// ---- clipboard: copy/paste rooms, furniture and property sections ----
+app.clipboard = null;
+app.copySelected = () => {
+  const ui = app.ui;
+  if (ui.selType === "room") {
+    const ids = ui.selIds?.length ? ui.selIds : [ui.selId];
+    const items = app.plan.rooms.filter((r) => ids.includes(r.id)).map((r) => ({ ...r }));
+    if (!items.length) return;
+    app.clipboard = { type: "room", items };
+  } else if (ui.selType === "furniture") {
+    const f = app.plan.furniture.find((x) => x.id === ui.selId);
+    if (!f) return;
+    app.clipboard = { type: "furniture", items: [{ ...f }] };
+  } else if (ui.selType === "property") {
+    const r = app.plan.property.find((x) => x.id === ui.selId);
+    if (!r) return;
+    app.clipboard = { type: "property", items: [{ ...r }] };
+  } else return;
+  app.toast("Copied — Ctrl+V to paste");
+};
+app.pasteClipboard = () => {
+  const cb = app.clipboard;
+  if (!cb || !cb.items?.length) return;
+  app.pushUndo();
+  const off = Math.max(1, Math.round(0.5 / cellMeters(app.plan))); // ~0.5 m offset
+  if (cb.type === "room") {
+    const groupMap = {}; const newIds = [];
+    for (const src of cb.items) {
+      const id = store.uid();
+      const group = src.group ? (groupMap[src.group] || (groupMap[src.group] = store.uid())) : null;
+      app.plan.rooms.push({ ...src, id, x: Math.max(0, src.x + off), y: Math.max(0, src.y + off), group });
+      newIds.push(id);
+    }
+    app.ui.selType = "room"; app.ui.selIds = newIds; app.ui.selId = newIds[newIds.length - 1];
+  } else if (cb.type === "furniture") {
+    const src = cb.items[0], id = store.uid();
+    app.plan.furniture.push({ ...src, id, x: src.x + off, y: src.y + off });
+    app.ui.selType = "furniture"; app.ui.selId = id; app.ui.selIds = [id];
+  } else if (cb.type === "property") {
+    const src = cb.items[0], id = store.uid();
+    app.plan.property.push({ ...src, id, x: Math.max(0, src.x + off), y: Math.max(0, src.y + off) });
+    app.ui.selType = "property"; app.ui.selId = id; app.ui.selIds = [id];
+  }
+  app.commit();
+  app.toast("Pasted");
 };
 
 // ---- export ----
@@ -288,7 +329,7 @@ app.exportImage = (type) => {
 app.setPlan = (plan, { fit = true } = {}) => {
   app.plan = plan;
   app.ui.tool = "room";
-  app.ui.selType = null; app.ui.selId = null;
+  app.ui.selType = null; app.ui.selId = null; app.ui.selIds = [];
   app.ui.draft = null; app.ui.editingLabelId = null;
   app._undo = store.createUndo();
   store.savePlan(plan);

@@ -50,7 +50,7 @@ export function attachUI(app) {
   app.setHud = (text) => { hud.textContent = text || defaultHint(); };
   function defaultHint() {
     switch (app.ui.tool) {
-      case "room": return "Room — drag on the canvas to add a room · click to select · double-click to rename · drag handles to resize";
+      case "room": return "Room — drag to add · click to select · shift-click rooms then Merge · double-click to rename · Ctrl+C/V to copy";
       case "furniture": return "Furniture — click an item to add it, then drag it into place · R rotates · Del removes";
       case "property": return "Property — drag to add sections · drag handles to resize · Done when finished";
       default: return "Click to select · drag to move · drag handles to resize";
@@ -107,9 +107,14 @@ export function attachUI(app) {
       if (document.activeElement !== roomH) roomH.value = (r.h * rcm).toFixed(2);
       roomColor.value = toHex(r.color);
       $("room-unmerge").hidden = !r.group;
-      const g = roomGroups(app.plan).find((gr) => gr.rooms.some((x) => x.id === r.id));
-      const dims = g ? fmtDims(app.plan, g.bbox.w, g.bbox.h).replace("\n", "  ") : "";
-      roomDims.textContent = `${dims}\n${fmtArea(app.plan, g ? g.areaCells : r.w * r.h)}`;
+      const multi = ui.selIds?.length > 1;
+      if (multi) {
+        roomDims.textContent = `${ui.selIds.length} rooms selected\nMerge to combine (open-plan)`;
+      } else {
+        const g = roomGroups(app.plan).find((gr) => gr.rooms.some((x) => x.id === r.id));
+        const dims = g ? fmtDims(app.plan, g.bbox.w, g.bbox.h).replace("\n", "  ") : "";
+        roomDims.textContent = `${dims}\n${fmtArea(app.plan, g ? g.areaCells : r.w * r.h)}`;
+      }
     } else if (ui.selType === "furniture") {
       const f = app.plan.furniture.find((x) => x.id === ui.selId);
       if (!f) { panel.hidden = true; return; }
