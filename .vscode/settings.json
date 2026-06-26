@@ -1,0 +1,5 @@
+{
+  // Open localhost links (e.g. the dev server) in the external system browser
+  // instead of the editor's built-in Simple Browser.
+  "workbench.browser.openLocalhostLinks": false
+}

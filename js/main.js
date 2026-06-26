@@ -5,11 +5,13 @@
 import { scheduleRender, resizeCanvas } from "./render.js";
 import { attachInput } from "./input.js";
 import { attachUI } from "./ui.js";
-import { furnitureCells } from "./furniture.js";
+import { catalogue, furnitureCells } from "./furniture.js";
 import { contentBounds } from "./rooms.js";
+import { pxToCells, snapTo, snapStep } from "./grid.js";
+import { cellMeters } from "./units.js";
 import * as store from "./state.js";
 import { exportImage as doExportImage } from "./export.js";
-import { makeShareLink, sharedParam, decodePlan } from "./share.js";
+import { encodePlan, sharedParam, decodePlan } from "./share.js";
 
 const canvas = document.getElementById("canvas");
 
@@ -17,9 +19,8 @@ const app = {
   canvas,
   plan: store.makePlan(),
   ui: {
-    tool: "select", selType: null, selId: null,
-    draft: null, placingKind: null, measure: null,
-    editingLabelId: null, preview: false, viewOnly: false,
+    tool: "room", selType: null, selId: null,
+    draft: null, editingLabelId: null, preview: false,
   },
   _undo: store.createUndo(),
 };
@@ -29,9 +30,17 @@ app.render = () => scheduleRender({ canvas, plan: app.plan, ui: app.ui });
 
 let saveTimer = null;
 app.save = () => {
-  if (app.ui.viewOnly) return;
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => store.savePlan(app.plan), 350);
+  saveTimer = setTimeout(() => { store.savePlan(app.plan); app.syncUrl(); }, 350);
+};
+
+// Keep the address bar holding an always-current, editable share link. Anyone
+// who opens it lands straight in the editor on this exact plan (see boot()).
+app.syncUrl = async () => {
+  try {
+    const enc = await encodePlan(app.plan);
+    history.replaceState(null, "", location.pathname + "#view=" + enc);
+  } catch (e) { /* URL too long / encode failed — keep the last good hash */ }
 };
 
 app.commit = () => {
@@ -77,20 +86,75 @@ app.zoomFit = () => {
 };
 
 // ---- tools ----
+// One tool is always active (radio). "room" draws rooms (and selects/moves);
+// "furniture" opens the palette; "property" edits the background footprint.
+// Selecting/moving existing objects works in every tool. Switching clears selection.
 app.setTool = (tool) => {
   app.ui.tool = tool;
-  if (tool !== "furniture") app.ui.placingKind = null;
-  if (tool !== "measure") app.ui.measure = null;
+  app.ui.draft = null;
+  app.ui.selType = null; app.ui.selId = null;
   app.refreshToolButtons();
-  app.refreshPalette?.();
   app.render();
 };
+
+// Add one piece of furniture at the centre of the current view, selected and
+// ready to drag. Called from the palette — one click adds exactly one item.
+app.addFurniture = (kind) => {
+  const def = catalogue[kind];
+  if (!def) return;
+  const r = canvas.getBoundingClientRect();
+  const c = pxToCells(app.plan, r.width / 2, r.height / 2);
+  const step = snapStep(app.plan);
+  const w0 = def.wmm / 1000 / cellMeters(app.plan);
+  const h0 = def.hmm / 1000 / cellMeters(app.plan);
+  const item = {
+    id: store.uid(), kind, rot: 0,
+    x: snapTo(c.x - w0 / 2, step), y: snapTo(c.y - h0 / 2, step),
+  };
+  app.pushUndo();
+  app.plan.furniture.push(item);
+  app.ui.selType = "furniture"; app.ui.selId = item.id;
+  app.commit();
+  app.toast(`Added ${def.name} — drag to position`);
+};
 app.setUnits = (u) => { app.plan.units = u; app.refreshToolButtons(); app.commit(); };
+// Metres label for a cell count — used in the live draw/resize HUD.
+app.fmtCells = (cells) => `${(cells * cellMeters(app.plan)).toFixed(2)} m`;
 app.togglePreview = () => {
   app.ui.preview = !app.ui.preview;
   if (app.ui.preview) { app.ui.selType = null; app.ui.selId = null; }
   app.refreshToolButtons();
   app.commit();
+};
+app.toggleDimensions = () => {
+  app.plan.options.showWallDims = !app.plan.options.showWallDims;
+  app.refreshToolButtons();
+  app.commit();
+};
+
+// ---- property footprint (edited only in the "property" tool) ----
+app.enterPropertyMode = () => app.setTool("property");
+app.finishProperty = () => { app.setTool("room"); app.commit(); };
+
+// Reset the whole footprint to a single rectangle of the default floor size.
+app.resetPropertyRect = () => {
+  app.pushUndo();
+  const f = app.plan.floor;
+  const rect = { id: store.uid(), x: 0, y: 0, w: f.w, h: f.h };
+  app.plan.property = [rect];
+  app.ui.selType = "property"; app.ui.selId = rect.id;
+  app.commit();
+};
+
+// Exact size (metres) for the selected footprint rectangle, typed in the panel.
+app.setPropertySize = (wM, hM) => {
+  if (app.ui.selType !== "property") return;
+  const r = app.plan.property.find((x) => x.id === app.ui.selId);
+  if (!r) return;
+  const cm = cellMeters(app.plan);
+  if (Number.isFinite(wM) && wM > 0) r.w = Math.max(1, Math.round(wM / cm));
+  if (Number.isFinite(hM) && hM > 0) r.h = Math.max(1, Math.round(hM / cm));
+  app.render(); app.save();
 };
 
 // ---- selection ops (shared by input keys and panel buttons) ----
@@ -100,7 +164,7 @@ app.deleteSelected = () => {
   app.pushUndo();
   if (ui.selType === "room") app.plan.rooms = app.plan.rooms.filter((r) => r.id !== ui.selId);
   else if (ui.selType === "furniture") app.plan.furniture = app.plan.furniture.filter((f) => f.id !== ui.selId);
-  else if (ui.selType === "compass") app.plan.compass = null;
+  else if (ui.selType === "property") app.plan.property = app.plan.property.filter((r) => r.id !== ui.selId);
   ui.selType = null; ui.selId = null;
   app.commit();
 };
@@ -156,43 +220,17 @@ app.unmergeSelected = () => {
   app.commit();
 };
 
-// ---- export / share ----
+// ---- export ----
 app.exportImage = (type) => doExportImage(app.plan, { type, includeFurniture: false });
-
-app.share = async () => {
-  let link;
-  try {
-    link = await makeShareLink(app.plan);
-    if (link.length > 14000) app.toast("Large plan — link may be too long for some browsers");
-    await navigator.clipboard.writeText(link);
-    app.toast("View-only link copied to clipboard");
-  } catch (e) {
-    console.warn(e);
-    if (link) prompt("Copy this view-only link:", link);
-  }
-};
-
-app.makeCopyToEdit = () => {
-  const clone = store.normalizePlan({
-    ...app.plan, id: undefined,
-    name: (app.plan.name || "Floorplan") + " (copy)",
-  });
-  history.replaceState(null, "", location.pathname);
-  document.body.classList.remove("viewonly");
-  document.getElementById("viewonly-bar").hidden = true;
-  app.ui.viewOnly = false; app.ui.preview = false;
-  app.setPlan(clone);
-  app.refreshToolButtons();
-};
 
 // ---- plan lifecycle ----
 app.setPlan = (plan, { fit = true } = {}) => {
   app.plan = plan;
+  app.ui.tool = "room";
   app.ui.selType = null; app.ui.selId = null;
-  app.ui.draft = null; app.ui.measure = null;
-  app.ui.placingKind = null; app.ui.editingLabelId = null;
+  app.ui.draft = null; app.ui.editingLabelId = null;
   app._undo = store.createUndo();
-  if (!app.ui.viewOnly) store.savePlan(plan);
+  store.savePlan(plan);
   app.refreshPlanList?.();
   app.refreshToolButtons?.();
   if (fit) app.zoomFit(); else app.commit();
@@ -225,10 +263,13 @@ async function boot() {
   if (shared) {
     try {
       const raw = await decodePlan(shared);
-      app.plan = store.normalizePlan(raw);
-      app.ui.viewOnly = true;
-      app.ui.preview = true;
-      app.enterViewOnly();
+      const plan = store.normalizePlan(raw);
+      // Load the shared plan straight into the editor. It's saved locally under
+      // its own id, so re-opening the same link reuses it (no duplicates), and
+      // edits flow back into the URL via app.syncUrl().
+      store.savePlan(plan);
+      app.plan = plan;
+      app.refreshPlanList();
       app.refreshToolButtons();
       app.zoomFit();
       return;

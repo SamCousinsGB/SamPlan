@@ -2,14 +2,14 @@
 // PRINT palette and a view fitted to the plan, then adds a listing title block.
 
 import { drawScene, PRINT } from "./render.js";
-import { contentBounds, totalAreaCells } from "./rooms.js";
+import { exportBounds, totalAreaCells } from "./rooms.js";
 import { fmtArea, niceScaleMetres, cellMeters } from "./units.js";
 
 const DISCLAIMER =
   "For illustrative purposes only. Not to scale. All measurements are approximate.";
 
 export function renderToCanvas(plan, { pxWidth = 2400, includeFurniture = false } = {}) {
-  const bounds = contentBounds(plan);
+  const bounds = exportBounds(plan);
   const margin = Math.round(pxWidth * 0.07);
   const titleH = Math.round(pxWidth * 0.11);
 

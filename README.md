@@ -16,27 +16,35 @@ build step.
 - **Open-plan merge** — select a room and hit **Merge** to drop the wall between adjoining
   rooms (kitchen/diner), combining them under one label and area.
 - **UK furniture library** — true-size B&W symbols: double bed 1350×1900, kitchen carcasses
-  300/400/500/600mm, bath 1700×700, and more. A staging layer, kept off the clean export.
-- **Compass** — a draggable, rotatable north point.
-- **Measure** — drag to read any distance in metres & feet.
+  300/400/500/600mm, bath 1700×700, and more. Click an item to drop it in view, then drag it
+  into place. A staging layer, kept off the clean export.
+- **Property footprint** — every plan starts by drawing the building outline: drag one or
+  more rectangles that union into the exact shape (an L-plan, a return, etc.), tweak sizes, then
+  hit **Done**. From then on it sits **locked in the background** while you draw rooms inside it.
+  Re-enter any time with the **Property** button. A guide only — not counted in the floor area
+  or the clean export.
+- **Dimensions toggle** — show or hide the running room and property dimensions.
 - **Listing preview** — a clean black-and-white view that matches what portals expect.
 - **Export** — print-resolution PNG/JPEG with a title block (name/address, total area, scale
   bar, "not to scale" disclaimer).
-- **Share** — a view-only link with the whole plan encoded in the URL (no backend).
+- **Live shareable link** — the whole plan is encoded into the page URL and updates as you
+  edit (no backend, no Share button). Copy the address bar and send it; whoever opens it lands
+  straight in the editor on that plan, fully editable, and their URL keeps updating as they go.
 
 Everything autosaves to your browser; named plans can be switched, renamed and deleted.
 
 ## Tools & shortcuts
 
+Selecting, moving and resizing are always on — there's no "select mode" to switch into.
+
 | | |
 |---|---|
-| **Select** | click to select, drag to move, drag handles to resize |
-| **Room** | drag to draw a room, double-click to rename |
-| **Furniture** | pick an item then click to place · **R** rotates · **Esc** cancels |
-| **Compass** | place / move the north point |
-| **Measure** | drag for a dual-unit distance |
-| Pan | space-drag or middle-mouse · Zoom | mouse wheel |
-| Delete | remove selected · Arrows | nudge · **Ctrl+Z / Ctrl+Shift+Z** | undo / redo |
+| Select / move | click any room or item, drag to move, drag handles to resize |
+| **Draw Room** | toggle on, then drag on the canvas to add a room · double-click to rename |
+| **Furniture** | open the palette, click an item to add it, then drag into place · **R** rotates |
+| **Property** | edit the background footprint — drag to add sections, move/resize/delete them, **Done** to lock |
+| Pan | space-drag or middle-mouse · Zoom | mouse wheel · **Fit** recentres |
+| Delete | remove selected · Arrows | nudge · **Esc** | back to select · **Ctrl+Z / Ctrl+Shift+Z** | undo / redo |
 
 ## Run locally
 

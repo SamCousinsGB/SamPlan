@@ -8,48 +8,45 @@
 </head>
 <body>
   <header id="toolbar">
-    <div class="group">
-      <strong class="brand">SamPlan</strong>
+    <span class="brand">
+      <span class="brand-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M3.5 11.2 12 4l8.5 7.2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M5.5 9.8V20h13V9.8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M10 20v-5h4v5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </span>
+      SamPlan
+    </span>
+
+    <div class="seg" role="group" aria-label="Tools">
+      <button class="tool-btn" data-tool="property" title="Edit the property outline">Property</button>
+      <button class="tool-btn" data-tool="room" title="Draw rooms — drag on the canvas">Room</button>
+      <button class="tool-btn" data-tool="furniture" title="Furniture library">Furniture</button>
     </div>
 
-    <div class="group" role="radiogroup" aria-label="Tool" id="tools">
-      <button class="tool-btn is-active" data-tool="select" title="Select / move (V)">Select</button>
-      <button class="tool-btn" data-tool="room" title="Draw rooms (R)">Room</button>
-      <button class="tool-btn" data-tool="furniture" title="Place furniture (F)">Furniture</button>
-      <button class="tool-btn" data-tool="compass" title="North point (N)">Compass</button>
-      <button class="tool-btn" data-tool="measure" title="Measure (M)">Measure</button>
-    </div>
+    <span class="spacer"></span>
 
-    <div class="group">
-      <button id="btn-merge" title="Merge selected room with another (open-plan)">Merge</button>
-      <button id="btn-unmerge" title="Unmerge room">Unmerge</button>
-    </div>
+    <select id="plan-list" class="plan-select" aria-label="Open plan" title="Switch plan"></select>
+    <span id="area-readout" title="Total floor area">—</span>
+    <button id="btn-export" title="Download PNG (print resolution)">Export</button>
+    <button id="btn-zoom-fit" title="Fit plan to view">Fit</button>
 
-    <div class="group">
-      <button id="btn-new">New</button>
-      <select id="plan-list" aria-label="Open plan" title="Open plan"></select>
-      <button id="btn-rename" title="Rename plan">Rename</button>
-      <button id="btn-delete" title="Delete plan">Delete</button>
-    </div>
-
-    <div class="group">
-      <select id="unit-select" title="Display units">
-        <option value="dual">m + ft</option>
-        <option value="m">metres</option>
-        <option value="ft">feet</option>
-      </select>
-      <button id="btn-preview" title="Toggle clean B&amp;W listing preview">Preview</button>
-    </div>
-
-    <div class="group">
-      <button id="btn-share" title="Copy a view-only link">Share</button>
-      <button id="btn-export-png" title="Export PNG (print resolution)">PNG</button>
-      <button id="btn-export-jpg" title="Export JPEG">JPG</button>
-    </div>
-
-    <div class="group push-right">
-      <span id="area-readout" title="Total floor area">—</span>
-      <button id="btn-zoom-fit" title="Fit to view">Fit</button>
+    <div class="menu" id="more-menu">
+      <button id="btn-more" class="menu-trigger" aria-haspopup="true" aria-expanded="false" title="More">⋯</button>
+      <div class="menu-pop" id="more-pop" role="menu" hidden>
+        <button id="btn-new" class="menu-item" role="menuitem">New floorplan</button>
+        <button id="btn-rename" class="menu-item" role="menuitem">Rename</button>
+        <button id="btn-delete" class="menu-item" role="menuitem">Delete</button>
+        <hr class="menu-sep" />
+        <button id="btn-dims" class="menu-item check" role="menuitemcheckbox">Dimensions</button>
+        <button id="btn-preview" class="menu-item check" role="menuitemcheckbox">Listing preview</button>
+        <hr class="menu-sep" />
+        <div class="menu-label">Units</div>
+        <button class="menu-item check unit-opt" data-unit="m" role="menuitemradio">Metres</button>
+        <button class="menu-item check unit-opt" data-unit="ft" role="menuitemradio">Feet</button>
+        <button class="menu-item check unit-opt" data-unit="dual" role="menuitemradio">Metres + feet</button>
+      </div>
     </div>
   </header>
 
@@ -58,7 +55,7 @@
 
     <!-- Furniture palette (shown when the Furniture tool is active) -->
     <aside id="palette" class="palette" hidden>
-      <div class="palette-head">Furniture <small>click to place · R rotates · Esc cancels</small></div>
+      <div class="palette-head">Furniture <small>Click to add · then drag into place · R rotates</small></div>
       <div id="palette-body"></div>
     </aside>
 
@@ -70,6 +67,8 @@
         <div class="readout" id="room-dims">—</div>
         <label class="field"><span>Colour</span>
           <input id="room-color" type="color" /></label>
+        <button id="room-merge" title="Merge with adjoining rooms (open-plan)">Merge open-plan</button>
+        <button id="room-unmerge" hidden>Unmerge</button>
         <button id="room-delete" class="danger">Delete room</button>
       </div>
       <div id="panel-furn" hidden>
@@ -78,10 +77,15 @@
         <button id="furn-rotate">Rotate 90° (R)</button>
         <button id="furn-delete" class="danger">Delete</button>
       </div>
-      <div id="panel-compass" hidden>
-        <label class="field"><span>North rotation</span>
-          <input id="compass-rot" type="range" min="0" max="359" step="1" /></label>
-        <button id="compass-delete" class="danger">Remove compass</button>
+      <div id="panel-prop" hidden>
+        <div class="readout">Property section</div>
+        <div class="row">
+          <label class="field"><span>Width (m)</span>
+            <input id="prop-w" type="number" min="1" max="100" step="0.1" /></label>
+          <label class="field"><span>Depth (m)</span>
+            <input id="prop-h" type="number" min="1" max="100" step="0.1" /></label>
+        </div>
+        <button id="prop-delete" class="danger">Delete section</button>
       </div>
     </div>
 
@@ -89,33 +93,25 @@
     <div id="toast" class="toast" hidden></div>
     <input id="inline-label" class="inline-label" hidden />
 
-    <!-- View-only banner (share links) -->
-    <div id="viewonly-bar" class="viewonly-bar" hidden>
-      <span>View-only floorplan</span>
-      <button id="btn-copy-edit">Make a copy to edit</button>
-      <button id="btn-vo-png">Download PNG</button>
+    <!-- Property footprint edit bar -->
+    <div id="property-bar" class="property-bar" hidden>
+      <span>Draw your property outline — drag to add sections</span>
+      <button id="prop-reset" title="Reset to a single rectangle">Reset</button>
+      <button id="prop-done" class="primary">Done</button>
     </div>
   </main>
 
   <dialog id="setup-dialog">
     <form method="dialog" id="setup-form">
       <h2>New floorplan</h2>
-      <label class="field"><span>Plan name</span>
-        <input id="setup-name" type="text" value="Untitled" maxlength="60" required /></label>
-      <label class="field"><span>Address (optional)</span>
-        <input id="setup-address" type="text" maxlength="120" /></label>
+      <label class="field"><span>Property name</span>
+        <input id="setup-name" type="text" placeholder="e.g. 12 Oak Avenue" maxlength="80" required /></label>
       <div class="row">
         <label class="field"><span>Property width (m)</span>
           <input id="setup-w" type="number" value="8" min="1" max="100" step="0.1" required /></label>
         <label class="field"><span>Property depth (m)</span>
           <input id="setup-h" type="number" value="6" min="1" max="100" step="0.1" required /></label>
       </div>
-      <label class="field"><span>Grid / snap precision</span>
-        <select id="setup-grid">
-          <option value="0.1">100 mm (coarse)</option>
-          <option value="0.05" selected>50 mm (recommended)</option>
-          <option value="0.025">25 mm (fine)</option>
-        </select></label>
       <menu class="dialog-actions">
         <button value="cancel" type="button" id="setup-cancel">Cancel</button>
         <button value="confirm" id="setup-create" class="primary">Create</button>

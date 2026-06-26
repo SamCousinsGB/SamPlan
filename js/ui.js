@@ -4,7 +4,7 @@
 
 import { cellsToPx, cellPx } from "./grid.js";
 import { catalogue, CATEGORIES, itemsByCategory } from "./furniture.js";
-import { fmtDims, fmtArea } from "./units.js";
+import { fmtDims, fmtArea, cellMeters } from "./units.js";
 import { roomGroups, totalAreaCells } from "./rooms.js";
 import * as store from "./state.js";
 
@@ -13,8 +13,11 @@ export function attachUI(app) {
   const toolButtons = [...document.querySelectorAll(".tool-btn")];
 
   const planList = $("plan-list");
-  const unitSelect = $("unit-select");
   const previewBtn = $("btn-preview");
+  const dimsBtn = $("btn-dims");
+  const unitOpts = [...document.querySelectorAll(".unit-opt")];
+  const moreBtn = $("btn-more");
+  const morePop = $("more-pop");
   const areaReadout = $("area-readout");
   const hud = $("hud");
   const toast = $("toast");
@@ -25,13 +28,16 @@ export function attachUI(app) {
   const panel = $("panel");
   const panelRoom = $("panel-room");
   const panelFurn = $("panel-furn");
-  const panelCompass = $("panel-compass");
+  const panelProp = $("panel-prop");
   const roomName = $("room-name");
   const roomDims = $("room-dims");
   const roomColor = $("room-color");
   const furnName = $("furn-name");
   const furnSize = $("furn-size");
-  const compassRot = $("compass-rot");
+  const propW = $("prop-w");
+  const propH = $("prop-h");
+
+  const propertyBar = $("property-bar");
 
   const dialog = $("setup-dialog");
   const setupForm = $("setup-form");
@@ -40,11 +46,10 @@ export function attachUI(app) {
   app.setHud = (text) => { hud.textContent = text || defaultHint(); };
   function defaultHint() {
     switch (app.ui.tool) {
-      case "room": return "Room — drag to draw, double-click to rename, drag handles to resize";
-      case "furniture": return "Furniture — pick an item then click to place · R rotates · Esc cancels";
-      case "compass": return "Compass — click to place the north point, drag to move";
-      case "measure": return "Measure — drag to read a distance in metres & feet";
-      default: return "Select — click to select, drag to move, Del to delete";
+      case "room": return "Room — drag on the canvas to add a room · click to select · double-click to rename · drag handles to resize";
+      case "furniture": return "Furniture — click an item to add it, then drag it into place · R rotates · Del removes";
+      case "property": return "Property — drag to add sections · drag handles to resize · Done when finished";
+      default: return "Click to select · drag to move · drag handles to resize";
     }
   }
   let toastTimer = null;
@@ -57,9 +62,13 @@ export function attachUI(app) {
   // ---------- tool buttons / palette visibility ----------
   app.refreshToolButtons = () => {
     toolButtons.forEach((b) => b.classList.toggle("is-active", b.dataset.tool === app.ui.tool));
-    palette.hidden = app.ui.tool !== "furniture";
-    previewBtn.classList.toggle("is-active", !!app.ui.preview);
-    unitSelect.value = app.plan.units;
+    palette.hidden = app.ui.tool !== "furniture" || app.ui.preview;
+    // Footprint edit bar shows only while in the property tool (not in preview).
+    propertyBar.hidden = !(app.ui.tool === "property" && !app.ui.preview);
+    // Reflect view-option state on the More-menu items.
+    dimsBtn.classList.toggle("is-on", !!app.plan.options.showWallDims);
+    previewBtn.classList.toggle("is-on", !!app.ui.preview);
+    unitOpts.forEach((b) => b.classList.toggle("is-on", b.dataset.unit === app.plan.units));
     app.setHud("");
   };
 
@@ -80,7 +89,7 @@ export function attachUI(app) {
   // ---------- property panel ----------
   app.refreshPanel = () => {
     const ui = app.ui;
-    panelRoom.hidden = panelFurn.hidden = panelCompass.hidden = true;
+    panelRoom.hidden = panelFurn.hidden = panelProp.hidden = true;
     if (!ui.selType || ui.preview) { panel.hidden = true; return; }
     panel.hidden = false;
     if (ui.selType === "room") {
@@ -89,6 +98,7 @@ export function attachUI(app) {
       panelRoom.hidden = false;
       if (document.activeElement !== roomName) roomName.value = r.name || "";
       roomColor.value = toHex(r.color);
+      $("room-unmerge").hidden = !r.group;
       const g = roomGroups(app.plan).find((gr) => gr.rooms.some((x) => x.id === r.id));
       const dims = g ? fmtDims(app.plan, g.bbox.w, g.bbox.h).replace("\n", "  ") : "";
       roomDims.textContent = `${dims}\n${fmtArea(app.plan, g ? g.areaCells : r.w * r.h)}`;
@@ -99,9 +109,13 @@ export function attachUI(app) {
       const def = catalogue[f.kind];
       furnName.textContent = def ? def.name : f.kind;
       furnSize.textContent = def ? `${def.wmm} × ${def.hmm} mm` : "";
-    } else if (ui.selType === "compass" && app.plan.compass) {
-      panelCompass.hidden = false;
-      compassRot.value = app.plan.compass.rot || 0;
+    } else if (ui.selType === "property") {
+      const r = app.plan.property.find((x) => x.id === ui.selId);
+      if (!r) { panel.hidden = true; return; }
+      panelProp.hidden = false;
+      const cm = cellMeters(app.plan);
+      if (document.activeElement !== propW) propW.value = (r.w * cm).toFixed(2);
+      if (document.activeElement !== propH) propH.value = (r.h * cm).toFixed(2);
     } else {
       panel.hidden = true;
     }
@@ -157,19 +171,12 @@ export function attachUI(app) {
         const label = document.createElement("span");
         label.textContent = def.name;
         item.append(c, label);
-        item.addEventListener("click", () => {
-          app.ui.placingKind = app.ui.placingKind === def.id ? null : def.id;
-          highlightPalette();
-          app.setHud(app.ui.placingKind ? `Click to place: ${def.name}` : "");
-        });
+        // One click adds exactly one item to the centre of the view (see main.js).
+        item.addEventListener("click", () => app.addFurniture(def.id));
         grid.appendChild(item);
       }
       paletteBody.appendChild(grid);
     }
-  }
-  function highlightPalette() {
-    paletteBody.querySelectorAll(".palette-item").forEach((el) =>
-      el.classList.toggle("is-active", el.dataset.kind === app.ui.placingKind));
   }
   function drawThumb(canvas, def) {
     const dpr = window.devicePixelRatio || 1;
@@ -181,37 +188,61 @@ export function attachUI(app) {
     let w = bw, h = bw / ar;
     if (h > bh) { h = bh; w = bh * ar; }
     ctx.translate((54 - w) / 2, (40 - h) / 2);
-    ctx.strokeStyle = "#cdd3de"; ctx.fillStyle = "#2a2f38"; ctx.lineWidth = 1; ctx.lineJoin = "round";
+    ctx.strokeStyle = "#46505f"; ctx.fillStyle = "#ffffff"; ctx.lineWidth = 1; ctx.lineJoin = "round";
     def.draw(ctx, w, h);
   }
-  app.refreshPalette = highlightPalette;
 
-  // ---------- tool buttons ----------
+  // ---------- tool buttons (radio: one is always active) ----------
   toolButtons.forEach((b) => b.addEventListener("click", () => app.setTool(b.dataset.tool)));
 
-  // ---------- plan management ----------
-  $("btn-new").addEventListener("click", () => app.openSetup(false));
+  // ---------- More menu (open/close) ----------
+  const closeMenu = () => { morePop.hidden = true; moreBtn.setAttribute("aria-expanded", "false"); };
+  const openMenu = () => { morePop.hidden = false; moreBtn.setAttribute("aria-expanded", "true"); };
+  moreBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    morePop.hidden ? openMenu() : closeMenu();
+  });
+  document.addEventListener("click", (e) => {
+    if (!morePop.hidden && !$("more-menu").contains(e.target)) closeMenu();
+  });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMenu(); });
+
+  // ---------- plan management (in the menu) ----------
   planList.addEventListener("change", () => app.switchPlan(planList.value));
+  $("btn-new").addEventListener("click", () => { closeMenu(); app.openSetup(false); });
   $("btn-rename").addEventListener("click", () => {
+    closeMenu();
     const name = prompt("Rename plan:", app.plan.name);
     if (name !== null) app.renamePlan(name);
   });
   $("btn-delete").addEventListener("click", () => {
+    closeMenu();
     if (confirm(`Delete "${app.plan.name}"?`)) app.deleteCurrentPlan();
   });
 
-  // ---------- units / preview ----------
-  unitSelect.addEventListener("change", () => app.setUnits(unitSelect.value));
-  previewBtn.addEventListener("click", () => app.togglePreview());
+  // ---------- view options (in the menu) ----------
+  previewBtn.addEventListener("click", () => { app.togglePreview(); closeMenu(); });
+  dimsBtn.addEventListener("click", () => { app.toggleDimensions(); closeMenu(); });
+  unitOpts.forEach((b) =>
+    b.addEventListener("click", () => { app.setUnits(b.dataset.unit); closeMenu(); }));
 
-  // ---------- merge ----------
-  $("btn-merge").addEventListener("click", () => app.mergeSelected());
-  $("btn-unmerge").addEventListener("click", () => app.unmergeSelected());
+  // ---------- property section panel ----------
+  const onPropInput = () =>
+    app.setPropertySize(parseFloat(propW.value), parseFloat(propH.value));
+  propW.addEventListener("input", onPropInput);
+  propH.addEventListener("input", onPropInput);
+  $("prop-delete").addEventListener("click", () => app.deleteSelected());
 
-  // ---------- share / export ----------
-  $("btn-share").addEventListener("click", () => app.share());
-  $("btn-export-png").addEventListener("click", () => app.exportImage("image/png"));
-  $("btn-export-jpg").addEventListener("click", () => app.exportImage("image/jpeg"));
+  // ---------- property edit bar ----------
+  $("prop-done").addEventListener("click", () => app.finishProperty());
+  $("prop-reset").addEventListener("click", () => app.resetPropertyRect());
+
+  // ---------- room open-plan merge (in the room panel) ----------
+  $("room-merge").addEventListener("click", () => app.mergeSelected());
+  $("room-unmerge").addEventListener("click", () => app.unmergeSelected());
+
+  // ---------- export / fit ----------
+  $("btn-export").addEventListener("click", () => app.exportImage("image/png"));
   $("btn-zoom-fit").addEventListener("click", () => app.zoomFit());
 
   // ---------- panel inputs ----------
@@ -226,20 +257,6 @@ export function attachUI(app) {
   $("room-delete").addEventListener("click", () => app.deleteSelected());
   $("furn-rotate").addEventListener("click", () => app.rotateSelected());
   $("furn-delete").addEventListener("click", () => app.deleteSelected());
-  compassRot.addEventListener("input", () => {
-    if (app.plan.compass) { app.plan.compass.rot = +compassRot.value; app.render(); app.save(); }
-  });
-  $("compass-delete").addEventListener("click", () => {
-    app.plan.compass = null; app.ui.selType = null; app.commit();
-  });
-
-  // ---------- view-only ----------
-  app.enterViewOnly = () => {
-    document.body.classList.add("viewonly");
-    $("viewonly-bar").hidden = false;
-    $("btn-copy-edit").addEventListener("click", () => app.makeCopyToEdit());
-    $("btn-vo-png").addEventListener("click", () => app.exportImage("image/png"));
-  };
 
   // ---------- setup dialog ----------
   app.openSetup = (firstRun = false) => {
@@ -250,16 +267,17 @@ export function attachUI(app) {
   $("setup-cancel").addEventListener("click", () => dialog.close());
   setupForm.addEventListener("submit", (e) => {
     if (e.submitter && e.submitter.id === "setup-cancel") return;
-    const cellMeters = parseFloat($("setup-grid").value) || 0.05;
+    const cellMeters = 0.05; // 50 mm grid — fixed for simplicity
     const wM = clampNum(parseFloat($("setup-w").value), 1, 100, 8);
     const hM = clampNum(parseFloat($("setup-h").value), 1, 100, 6);
     app.newPlan({
       name: $("setup-name").value.trim() || "Untitled",
-      address: $("setup-address").value.trim(),
       cellMeters,
       wCells: Math.round(wM / cellMeters),
       hCells: Math.round(hM / cellMeters),
     });
+    // Start in property mode so the footprint is the first thing you set.
+    app.enterPropertyMode();
   });
 
   buildPalette();

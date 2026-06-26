@@ -34,12 +34,12 @@ export function makePlan({
     grid: { cell: 12, sub },          // cell = screen px at zoom 1; sub = fine-snap subdivisions
     scale: { cellMeters },            // canonical real metres per cell
     units,                            // "dual" | "m" | "ft"
-    floor: { w: wCells, h: hCells },  // soft property extent (initial view + faint editor guide)
-    rooms: [                          // start from one default room covering the floor
-      { id: uid(), x: 0, y: 0, w: wCells, h: hCells, name: "", group: null, color: DEFAULT_COLORS[0] },
-    ],
+    floor: { w: wCells, h: hCells },  // initial view extent / default footprint size
+    // Property footprint: a union of rectangles (the building outline). Drawn
+    // locked in the background; edited only in the "property" tool.
+    property: [{ id: uid(), x: 0, y: 0, w: wCells, h: hCells }],
+    rooms: [],                        // start empty — draw rooms inside the footprint
     furniture: [],
-    compass: null,
     view: { zoom: 1, panX: 40, panY: 40 },
     options: { showFurniture: true, showWallDims: true },
   };
@@ -53,16 +53,24 @@ export function normalizePlan(raw) {
     h: clampInt(p.floor?.h, 1, 5000, 120),
   };
 
-  // Rooms: prefer new `rooms`; else migrate legacy `boxes`; else one default room.
+  // Rooms: prefer new `rooms`; else migrate legacy `boxes`; else start empty.
   let rooms;
-  if (Array.isArray(p.rooms) && p.rooms.length) {
+  if (Array.isArray(p.rooms)) {
     rooms = p.rooms.map(normalizeRoom).filter(Boolean);
-  } else if (Array.isArray(p.boxes) && p.boxes.length) {
+  } else if (Array.isArray(p.boxes)) {
     rooms = p.boxes.map((b) => normalizeRoom({ ...b, name: b.label })).filter(Boolean);
   } else {
-    rooms = [{ id: uid(), x: 0, y: 0, w: floor.w, h: floor.h, name: "", group: null,
-               color: DEFAULT_COLORS[0] }];
+    rooms = [];
   }
+
+  // Property footprint: prefer new `property`; else seed a single rect from the floor.
+  let property;
+  if (Array.isArray(p.property)) {
+    property = p.property.map(normalizeRect).filter(Boolean);
+  } else {
+    property = [{ id: uid(), x: 0, y: 0, w: floor.w, h: floor.h }];
+  }
+  if (!property.length) property = [{ id: uid(), x: 0, y: 0, w: floor.w, h: floor.h }];
 
   return {
     id: typeof p.id === "string" ? p.id : `p${Date.now().toString(36)}`,
@@ -75,9 +83,9 @@ export function normalizePlan(raw) {
     scale: { cellMeters: clampNum(p.scale?.cellMeters, 0.005, 5, 0.05) },
     units: ["dual", "m", "ft"].includes(p.units) ? p.units : "dual",
     floor,
+    property,
     rooms,
     furniture: Array.isArray(p.furniture) ? p.furniture.map(normalizeFurniture).filter(Boolean) : [],
-    compass: normalizeCompass(p.compass),
     view: {
       zoom: clampNum(p.view?.zoom, 0.05, 12, 1),
       panX: Number.isFinite(p.view?.panX) ? p.view.panX : 40,
@@ -104,6 +112,17 @@ function normalizeRoom(r) {
   };
 }
 
+function normalizeRect(r) {
+  if (!r || typeof r !== "object") return null;
+  return {
+    id: typeof r.id === "string" ? r.id : uid(),
+    x: clampInt(r.x, 0, 100000, 0),
+    y: clampInt(r.y, 0, 100000, 0),
+    w: clampInt(r.w, 1, 100000, 1),
+    h: clampInt(r.h, 1, 100000, 1),
+  };
+}
+
 function normalizeFurniture(f) {
   if (!f || typeof f !== "object" || typeof f.kind !== "string") return null;
   const rot = ((Math.round((Number(f.rot) || 0) / 90) % 4) + 4) % 4 * 90;
@@ -113,15 +132,8 @@ function normalizeFurniture(f) {
     x: clampNum(f.x, -100000, 100000, 0),
     y: clampNum(f.y, -100000, 100000, 0),
     rot,
-  };
-}
-
-function normalizeCompass(c) {
-  if (!c || typeof c !== "object") return null;
-  return {
-    x: clampNum(c.x, -100000, 100000, 4),
-    y: clampNum(c.y, -100000, 100000, 4),
-    rot: Number.isFinite(c.rot) ? c.rot : 0,
+    scaleX: clampNum(f.scaleX, 0.1, 50, 1),
+    scaleY: clampNum(f.scaleY, 0.1, 50, 1),
   };
 }
 

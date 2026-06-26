@@ -2,28 +2,30 @@
 // editor and the black-and-white listing/print output, selected by a palette.
 
 import { cellPx, cellsToPx, handlePoints, HANDLES } from "./grid.js";
-import { roomGroups, wallSegments } from "./rooms.js";
+import { roomGroups, wallSegments, propertyRects, propertyOutline, propertyBounds } from "./rooms.js";
 import { catalogue, furnitureCells } from "./furniture.js";
-import { fmtDims, fmtLen, cellMeters } from "./units.js";
+import { fmtDims, fmtLen, cellMeters, niceScaleMetres } from "./units.js";
 
 export const EDITOR = {
-  bg: "#161a20",
-  grid: "rgba(255,255,255,0.05)", gridMajor: "rgba(255,255,255,0.13)",
-  roomFill: "rgba(255,255,255,0.02)", roomFillSel: "rgba(79,157,255,0.10)",
-  wallExt: "#aeb6c4", wallInt: "#7f8796",
-  text: "#e9ecf2", textSub: "#aab2c0",
-  furniture: "#cdd3de", furnitureFill: "#161a20",
-  dim: "#8b93a3", compass: "#cdd3de", selection: "#4f9dff",
+  bg: "#eef1f6",
+  grid: "rgba(30,41,80,0.055)", gridMajor: "rgba(30,41,80,0.13)",
+  tint: true, roomFillSel: "rgba(99,102,241,0.16)",
+  wallExt: "#1e2533", wallInt: "#7a8492",
+  text: "#0f172a", textSub: "#5b6478",
+  furniture: "#46505f", furnitureFill: "#ffffff",
+  dim: "#5b6478", selection: "#4f46e5",
+  propFill: "rgba(79,70,229,0.045)", propLine: "#9aa3b8", propEdge: "rgba(79,70,229,0.5)",
 };
 
 export const PRINT = {
   bg: "#ffffff",
   grid: null, gridMajor: null,
-  roomFill: "#ffffff", roomFillSel: "#ffffff",
+  tint: false, roomFill: "#ffffff", roomFillSel: "#ffffff",
   wallExt: "#111111", wallInt: "#444444",
   text: "#111111", textSub: "#222222",
   furniture: "#1a1a1a", furnitureFill: "#ffffff",
-  dim: "#222222", compass: "#111111", selection: null,
+  dim: "#222222", selection: null,
+  propFill: null, propLine: null, propEdge: null,
 };
 
 let scheduled = false;
@@ -62,18 +64,52 @@ function drawEditor({ canvas, plan, ui }) {
     palette: preview ? PRINT : EDITOR,
     W, H,
     showGrid: !preview,
+    showProperty: !preview,
     showFurniture: preview ? false : plan.options.showFurniture,
     showDims: plan.options.showWallDims,
     showSelection: !preview,
     ui,
   });
+  if (!preview) drawScaleBar(ctx, plan, W, H);
+}
+
+// Fixed scale reference, pinned to the bottom-right of the viewport (screen space,
+// so it stays put while you pan). Picks a round metric length near ~120px.
+function drawScaleBar(ctx, plan, W, H) {
+  const s = cellPx(plan);
+  if (s <= 0) return;
+  const metresPerPx = cellMeters(plan) / s;
+  const metres = niceScaleMetres(metresPerPx);
+  const barPx = metres / metresPerPx;
+  if (!isFinite(barPx) || barPx < 8) return;
+  const pad = 22, x2 = W - pad, x1 = x2 - barPx, y = H - pad;
+  const label = metres >= 1 ? `${metres} m` : `${Math.round(metres * 100)} cm`;
+
+  ctx.save();
+  ctx.font = "600 11px system-ui, sans-serif";
+  ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+  // soft backing so it reads over the grid
+  const lw = ctx.measureText(label).width;
+  ctx.fillStyle = "rgba(255,255,255,0.78)";
+  roundRect(ctx, Math.min(x1, x2 - lw) - 12, y - 30, Math.max(barPx, lw) + 24, 40, 9);
+  ctx.fill();
+  ctx.strokeStyle = "#334155"; ctx.fillStyle = "#334155";
+  ctx.lineWidth = 2; ctx.lineCap = "butt";
+  ctx.beginPath();
+  ctx.moveTo(x1, y); ctx.lineTo(x2, y);
+  ctx.moveTo(x1, y - 5); ctx.lineTo(x1, y + 5);
+  ctx.moveTo(x2, y - 5); ctx.lineTo(x2, y + 5);
+  ctx.stroke();
+  ctx.fillText(label, (x1 + x2) / 2, y - 7);
+  ctx.restore();
 }
 
 // Core scene renderer, reused by the editor and by export.js (with a fitted view).
 export function drawScene(ctx, plan, opts) {
   const {
     palette, W, H,
-    showGrid = true, showFurniture = true, showDims = true,
+    showGrid = true, showProperty = false,
+    showFurniture = true, showDims = true,
     showSelection = false, ui = null,
   } = opts;
 
@@ -81,17 +117,75 @@ export function drawScene(ctx, plan, opts) {
   ctx.fillRect(0, 0, W, H);
 
   if (showGrid && palette.grid) drawGrid(ctx, plan, palette, W, H);
+  if (showProperty) drawPropertyLayer(ctx, plan, palette, ui, showDims);
   drawRooms(ctx, plan, palette, ui);
   if (showFurniture) drawFurniture(ctx, plan, palette);
   drawWalls(ctx, plan, palette);
   if (showDims) drawWallDimensions(ctx, plan, palette);
-  if (plan.compass) drawCompass(ctx, plan, palette);
 
   if (showSelection && ui) {
     drawDraft(ctx, plan, ui);
-    drawMeasure(ctx, plan, ui, palette);
     drawSelection(ctx, plan, ui);
   }
+}
+
+// Property footprint: a union of rectangles drawn locked in the background.
+// `editing` (the property tool) reveals each rectangle's edges so overlaps read.
+function drawPropertyLayer(ctx, plan, palette, ui, showDims) {
+  const rects = propertyRects(plan);
+  if (!rects.length || !palette.propFill) return;
+  const s = cellPx(plan);
+  const editing = ui && ui.tool === "property";
+
+  ctx.fillStyle = palette.propFill;
+  for (const r of rects) {
+    const p = cellsToPx(plan, r.x, r.y);
+    ctx.fillRect(p.x, p.y, r.w * s, r.h * s);
+  }
+
+  if (editing) {
+    ctx.strokeStyle = palette.propEdge;
+    ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
+    for (const r of rects) {
+      const p = cellsToPx(plan, r.x, r.y);
+      ctx.strokeRect(p.x, p.y, r.w * s, r.h * s);
+    }
+    ctx.setLineDash([]);
+  }
+
+  // Union outline (the building shell), thick.
+  ctx.strokeStyle = palette.propLine;
+  ctx.lineWidth = clamp(s * 0.4, 2, 9);
+  ctx.lineCap = "square";
+  ctx.beginPath();
+  for (const seg of propertyOutline(plan)) {
+    const a = cellsToPx(plan, seg.x1, seg.y1);
+    const b = cellsToPx(plan, seg.x2, seg.y2);
+    ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+  }
+  ctx.stroke();
+  ctx.lineCap = "butt";
+
+  // Always label the footprint while editing it; otherwise honour the Dims toggle.
+  if (editing || showDims) drawPropertyDims(ctx, plan, palette);
+}
+
+// Property name + overall size, as one centred label below the footprint.
+function drawPropertyDims(ctx, plan, palette) {
+  const b = propertyBounds(plan);
+  if (!b) return;
+  const s = cellPx(plan);
+  if (s < 5) return;
+  const a = cellsToPx(plan, b.x, b.y);
+  const w = b.w * s, h = b.h * s;
+  // Same dimension formatter as room labels, so sizes read identically everywhere.
+  const label = `${plan.name || "Property"} · ${fmtDims(plan, b.w, b.h).replace("\n", "  ")}`;
+  ctx.save();
+  ctx.fillStyle = palette.dim;
+  ctx.font = "600 13px system-ui, sans-serif";
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  ctx.fillText(label, a.x + w / 2, a.y + h + 8);
+  ctx.restore();
 }
 
 function drawGrid(ctx, plan, palette, W, H) {
@@ -136,11 +230,12 @@ function drawGrid(ctx, plan, palette, W, H) {
 
 function drawRooms(ctx, plan, palette, ui) {
   const s = cellPx(plan);
-  // fills
+  // fills — in the editor each room is tinted with its own colour; print stays white
   for (const r of plan.rooms) {
     const p = cellsToPx(plan, r.x, r.y);
     const sel = ui && ui.selType === "room" && ui.selId === r.id;
-    ctx.fillStyle = sel ? palette.roomFillSel : palette.roomFill;
+    if (palette.tint) ctx.fillStyle = sel ? palette.roomFillSel : rgba(r.color, 0.13);
+    else ctx.fillStyle = sel ? palette.roomFillSel : palette.roomFill;
     ctx.fillRect(p.x, p.y, r.w * s, r.h * s);
   }
   // labels (per group so merged rooms get one label + max dims)
@@ -208,8 +303,8 @@ function drawFurniture(ctx, plan, palette) {
     if (!def) continue;
     const { w, h } = furnitureCells(plan, item);
     const center = cellsToPx(plan, item.x + w / 2, item.y + h / 2);
-    const nw = (def.wmm / 1000 / cellMeters(plan)) * s;
-    const nh = (def.hmm / 1000 / cellMeters(plan)) * s;
+    const nw = (def.wmm / 1000 / cellMeters(plan)) * (item.scaleX || 1) * s;
+    const nh = (def.hmm / 1000 / cellMeters(plan)) * (item.scaleY || 1) * s;
     ctx.save();
     ctx.translate(center.x, center.y);
     ctx.rotate(((item.rot || 0) * Math.PI) / 180);
@@ -288,68 +383,47 @@ function dimLine(ctx, x1, y1, x2, y2, text, dir) {
   ctx.restore();
 }
 
-function drawCompass(ctx, plan, palette) {
-  const s = cellPx(plan);
-  const r = clamp((0.5 / cellMeters(plan)) * s, 18, 80);
-  const c = cellsToPx(plan, plan.compass.x, plan.compass.y);
-  ctx.save();
-  ctx.translate(c.x, c.y);
-  ctx.rotate(((plan.compass.rot || 0) * Math.PI) / 180);
-  ctx.strokeStyle = palette.compass;
-  ctx.fillStyle = palette.compass;
-  ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.stroke();
-  // N arrow
-  ctx.beginPath();
-  ctx.moveTo(0, -r * 0.85);
-  ctx.lineTo(r * 0.22, r * 0.1);
-  ctx.lineTo(0, -r * 0.1);
-  ctx.lineTo(-r * 0.22, r * 0.1);
-  ctx.closePath();
-  ctx.fill();
-  // ticks
-  for (let i = 0; i < 4; i++) {
-    ctx.save(); ctx.rotate((i * Math.PI) / 2);
-    ctx.beginPath(); ctx.moveTo(0, -r); ctx.lineTo(0, -r * 0.8); ctx.stroke();
-    ctx.restore();
-  }
-  ctx.font = `${Math.max(10, r * 0.32)}px system-ui, sans-serif`;
-  ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  ctx.fillText("N", 0, -r * 1.25);
-  ctx.restore();
-}
-
 function drawDraft(ctx, plan, ui) {
   if (!ui.draft) return;
   const s = cellPx(plan);
   const p = cellsToPx(plan, ui.draft.x, ui.draft.y);
-  ctx.fillStyle = "rgba(79,157,255,0.22)";
-  ctx.fillRect(p.x, p.y, ui.draft.w * s, ui.draft.h * s);
-  ctx.strokeStyle = "#4f9dff";
+  const w = ui.draft.w * s, h = ui.draft.h * s;
+  const prop = ui.tool === "property";
+  ctx.fillStyle = prop ? "rgba(90,101,115,0.16)" : "rgba(79,70,229,0.15)";
+  ctx.fillRect(p.x, p.y, w, h);
+  ctx.strokeStyle = prop ? "#5b6478" : "#4f46e5";
   ctx.setLineDash([5, 4]);
   ctx.lineWidth = 1.5;
-  ctx.strokeRect(p.x, p.y, ui.draft.w * s, ui.draft.h * s);
+  ctx.strokeRect(p.x, p.y, w, h);
   ctx.setLineDash([]);
+  drawSizeTag(ctx, plan, ui.draft.w, ui.draft.h, p.x + w / 2, p.y + h / 2, prop);
 }
 
-function drawMeasure(ctx, plan, ui, palette) {
-  if (!ui.measure) return;
-  const a = cellsToPx(plan, ui.measure.x1, ui.measure.y1);
-  const b = cellsToPx(plan, ui.measure.x2, ui.measure.y2);
-  ctx.strokeStyle = "#ffcf4f";
-  ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
-  const dx = ui.measure.x2 - ui.measure.x1, dy = ui.measure.y2 - ui.measure.y1;
-  const dist = Math.hypot(dx, dy);
-  const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-  const text = fmtLen(plan, dist).replace("\n", "  ");
-  ctx.font = "12px system-ui, sans-serif";
-  ctx.textAlign = "center"; ctx.textBaseline = "bottom";
-  const w = ctx.measureText(text).width + 10;
-  ctx.fillStyle = "rgba(20,22,28,0.85)";
-  ctx.fillRect(mid.x - w / 2, mid.y - 20, w, 16);
-  ctx.fillStyle = "#ffcf4f";
-  ctx.fillText(text, mid.x, mid.y - 5);
+// Live "W × H" pill drawn at the centre of a rectangle being drawn/resized.
+function drawSizeTag(ctx, plan, wCells, hCells, cx, cy, prop = false) {
+  if (wCells < 1 || hCells < 1) return;
+  const text = `${(wCells * cellMeters(plan)).toFixed(2)} × ${(hCells * cellMeters(plan)).toFixed(2)} m`;
+  ctx.save();
+  ctx.font = "600 12px system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const tw = ctx.measureText(text).width;
+  ctx.fillStyle = prop ? "rgba(71,80,95,0.94)" : "rgba(79,70,229,0.94)";
+  roundRect(ctx, cx - tw / 2 - 7, cy - 11, tw + 14, 22, 6);
+  ctx.fill();
+  ctx.fillStyle = "#fff";
+  ctx.fillText(text, cx, cy + 1);
+  ctx.restore();
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
 }
 
 function drawSelection(ctx, plan, ui) {
@@ -371,12 +445,23 @@ function drawSelection(ctx, plan, ui) {
     ctx.setLineDash([4, 3]);
     ctx.strokeRect(a.x - 1, a.y - 1, w * s + 2, h * s + 2);
     ctx.setLineDash([]);
-  } else if (ui.selType === "compass" && plan.compass) {
-    const r = clamp((0.5 / cellMeters(plan)) * s, 18, 80);
-    const c = cellsToPx(plan, plan.compass.x, plan.compass.y);
+    drawHandles(ctx, plan, { x: item.x, y: item.y, w, h });
+  } else if (ui.selType === "property") {
+    const r = propertyRects(plan).find((x) => x.id === ui.selId);
+    if (!r) return;
+    const a = cellsToPx(plan, r.x, r.y);
     ctx.strokeStyle = EDITOR.selection; ctx.lineWidth = 2;
-    ctx.strokeRect(c.x - r - 2, c.y - r - 2, r * 2 + 4, r * 2 + 4);
+    ctx.strokeRect(a.x - 1, a.y - 1, r.w * s + 2, r.h * s + 2);
+    drawHandles(ctx, plan, r);
   }
+}
+
+// "#4f9dff" -> "rgba(79,157,255,a)". Falls back to the accent on a bad value.
+function rgba(hex, a) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex || "");
+  if (!m) return `rgba(79,70,229,${a})`;
+  const n = parseInt(m[1], 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
 }
 
 function drawHandles(ctx, plan, rect) {

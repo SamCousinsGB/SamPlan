@@ -1,12 +1,14 @@
-// input.js — pointer + keyboard interaction, organised around a tool model:
-// Select · Room · Furniture · Compass · Measure. Reads/writes app.plan & app.ui.
+// input.js — pointer + keyboard interaction. Selection (click/move/resize) is the
+// always-on ground state. The "room" tool arms rectangle drawing; "furniture" opens
+// the palette; "property" edits the locked background footprint. Outside the
+// property tool the footprint is inert — clicks fall through to rooms.
 
 import {
-  pxToCells, cellsToPx, snapTo, snapStep, cellPx,
+  pxToCells, snapTo, snapStep, cellPx,
   handleAt, handleCursor, resizeRect,
 } from "./grid.js";
-import { roomAt } from "./rooms.js";
-import { catalogue, furnitureCells } from "./furniture.js";
+import { roomAt, propertyRectAt, propertyRects } from "./rooms.js";
+import { furnitureCells, catalogue } from "./furniture.js";
 import { cellMeters } from "./units.js";
 import { uid, nextColor } from "./state.js";
 
@@ -29,15 +31,31 @@ export function attachInput(app) {
     }
     return null;
   }
-  function compassHit(plan, px, py) {
-    if (!plan.compass) return false;
-    const s = cellPx(plan);
-    const r = Math.min(80, Math.max(18, (0.5 / cellMeters(plan)) * s));
-    const c = cellsToPx(plan, plan.compass.x, plan.compass.y);
-    return Math.hypot(px - c.x, py - c.y) <= r;
-  }
   function selectedRoom(plan, ui) {
     return ui.selType === "room" ? plan.rooms.find((r) => r.id === ui.selId) : null;
+  }
+  function selectedProp(plan, ui) {
+    return ui.selType === "property" ? propertyRects(plan).find((r) => r.id === ui.selId) : null;
+  }
+  function selectedFurniture(plan, ui) {
+    return ui.selType === "furniture" ? plan.furniture.find((f) => f.id === ui.selId) : null;
+  }
+  // Resize handle of a furniture item (its axis-aligned bounding box).
+  function furnitureHandleAt(plan, item, px, py) {
+    const bb = furnitureCells(plan, item);
+    return handleAt(plan, { x: item.x, y: item.y, w: bb.w, h: bb.h }, px, py);
+  }
+
+  // Clamp a resized rect into the x,y >= 0 region WITHOUT moving the opposite
+  // edge: if the left/top edge crossed the origin, pin it to 0 and shrink the
+  // span instead of keeping the (now wrong) width. Writes back onto `rect`.
+  function applyResize(rect, handle, cell) {
+    const r = resizeRect(rect, handle, Math.round(cell.x), Math.round(cell.y));
+    let { x, y, w, h } = r;
+    if (x < 0) { w += x; x = 0; }
+    if (y < 0) { h += y; y = 0; }
+    rect.x = x; rect.y = y;
+    rect.w = Math.max(1, w); rect.h = Math.max(1, h);
   }
 
   // ---------------- pointer down ----------------
@@ -45,29 +63,54 @@ export function attachInput(app) {
     const plan = app.plan, ui = app.ui;
     const pt = local(e);
 
-    // Pan: middle mouse, space+left, or any left-drag in view-only mode.
-    if (e.button === 1 || (e.button === 0 && (spaceDown || ui.viewOnly))) {
+    // Pan: right mouse, middle mouse, or space+left.
+    if (e.button === 1 || e.button === 2 || (e.button === 0 && spaceDown)) {
       drag = { type: "pan", sx: pt.x, sy: pt.y, panX: plan.view.panX, panY: plan.view.panY };
       capture(e); canvas.style.cursor = "grabbing"; e.preventDefault();
       return;
     }
-    if (ui.viewOnly) return; // view-only: pan/zoom only, no editing
     if (e.button !== 0) return;
 
     const cell = pxToCells(plan, pt.x, pt.y);
-    const step = snapStep(plan);
 
-    // Resize handle of the currently selected room (works in select & room tools)
+    // ---- property tool: edit the footprint rectangles (locked elsewhere) ----
+    if (ui.tool === "property") {
+      const sp = selectedProp(plan, ui);
+      if (sp) {
+        const h = handleAt(plan, sp, pt.x, pt.y);
+        if (h) { app.pushUndo(); drag = { type: "prop-resize", handle: h, rect: sp }; capture(e); return; }
+      }
+      const hit = propertyRectAt(plan, cell.x, cell.y);
+      if (hit) { select(ui, "property", hit.id); app.pushUndo();
+        drag = { type: "prop-move", rect: hit, gx: cell.x - hit.x, gy: cell.y - hit.y };
+        capture(e); app.commit(); return; }
+      ui.draft = { x: Math.round(cell.x), y: Math.round(cell.y), w: 0, h: 0 };
+      drag = { type: "prop-draw", ox: Math.round(cell.x), oy: Math.round(cell.y) };
+      capture(e); return;
+    }
+
+    // Resize handle of the currently selected room.
     const sr = selectedRoom(plan, ui);
-    if (sr && (ui.tool === "select" || ui.tool === "room")) {
+    if (sr) {
       const h = handleAt(plan, sr, pt.x, pt.y);
       if (h) { app.pushUndo(); drag = { type: "room-resize", handle: h, room: sr }; capture(e); return; }
     }
 
-    if (ui.tool === "furniture" && ui.placingKind) {
-      placeFurniture(plan, ui, cell, step, e);
-      return;
+    // Resize handle of the currently selected furniture.
+    const sf = selectedFurniture(plan, ui);
+    if (sf) {
+      const h = furnitureHandleAt(plan, sf, pt.x, pt.y);
+      if (h) { app.pushUndo(); drag = { type: "furn-resize", handle: h, item: sf }; capture(e); return; }
     }
+
+    // Furniture is always selectable/movable in select/room/furniture tools.
+    const fHit = furnitureAt(plan, cell.x, cell.y);
+    if (fHit) {
+      select(ui, "furniture", fHit.id); app.pushUndo();
+      drag = { type: "furn-move", item: fHit, gx: cell.x - fHit.x, gy: cell.y - fHit.y };
+      capture(e); app.commit(); return;
+    }
+
     if (ui.tool === "room") {
       const hit = roomAt(plan, cell.x, cell.y);
       if (hit) { select(ui, "room", hit.id); app.pushUndo();
@@ -78,34 +121,8 @@ export function attachInput(app) {
       drag = { type: "room-draw", ox: Math.round(cell.x), oy: Math.round(cell.y) };
       capture(e); return;
     }
-    if (ui.tool === "compass") {
-      if (!plan.compass) {
-        app.pushUndo();
-        plan.compass = { x: snapTo(cell.x, step), y: snapTo(cell.y, step), rot: 0 };
-      }
-      select(ui, "compass", "compass");
-      drag = { type: "compass-move", gx: cell.x - plan.compass.x, gy: cell.y - plan.compass.y };
-      capture(e); app.commit(); return;
-    }
-    if (ui.tool === "measure") {
-      const x = snapTo(cell.x, step), y = snapTo(cell.y, step);
-      ui.measure = { x1: x, y1: y, x2: x, y2: y };
-      drag = { type: "measure" };
-      capture(e); app.render(); return;
-    }
 
-    // ---- select tool (and furniture tool w/o a queued kind) ----
-    const fHit = furnitureAt(plan, cell.x, cell.y);
-    if (fHit) {
-      select(ui, "furniture", fHit.id); app.pushUndo();
-      drag = { type: "furn-move", item: fHit, gx: cell.x - fHit.x, gy: cell.y - fHit.y };
-      capture(e); app.commit(); return;
-    }
-    if (compassHit(plan, pt.x, pt.y)) {
-      select(ui, "compass", "compass"); app.pushUndo();
-      drag = { type: "compass-move", gx: cell.x - plan.compass.x, gy: cell.y - plan.compass.y };
-      capture(e); app.commit(); return;
-    }
+    // ---- ground state: select / move a room, or clear ----
     const rHit = roomAt(plan, cell.x, cell.y);
     if (rHit) {
       select(ui, "room", rHit.id); app.pushUndo();
@@ -115,27 +132,11 @@ export function attachInput(app) {
     if (ui.selType) { clearSelection(ui); app.commit(); }
   });
 
-  function placeFurniture(plan, ui, cell, step, e) {
-    const def = catalogue[ui.placingKind];
-    if (!def) return;
-    const w0 = def.wmm / 1000 / cellMeters(plan);
-    const h0 = def.hmm / 1000 / cellMeters(plan);
-    const item = {
-      id: uid(), kind: ui.placingKind, rot: 0,
-      x: snapTo(cell.x - w0 / 2, step), y: snapTo(cell.y - h0 / 2, step),
-    };
-    app.pushUndo();
-    plan.furniture.push(item);
-    select(ui, "furniture", item.id);
-    drag = { type: "furn-move", item, gx: cell.x - item.x, gy: cell.y - item.y };
-    capture(e); app.commit();
-  }
-
   // ---------------- pointer move ----------------
   canvas.addEventListener("pointermove", (e) => {
     const plan = app.plan, ui = app.ui;
     const pt = local(e);
-    if (!drag) { if (!ui.viewOnly) hoverCursor(plan, ui, pt); return; }
+    if (!drag) { hoverCursor(plan, ui, pt); return; }
 
     const cell = pxToCells(plan, pt.x, pt.y);
     const step = snapStep(plan);
@@ -151,7 +152,7 @@ export function attachInput(app) {
         const x = Math.max(0, Math.min(drag.ox, cx));
         const y = Math.max(0, Math.min(drag.oy, cy));
         ui.draft = { x, y, w: Math.abs(cx - drag.ox), h: Math.abs(cy - drag.oy) };
-        app.setHud(`Room: ${ui.draft.w} × ${ui.draft.h} cells`);
+        app.setHud(`Room: ${app.fmtCells(ui.draft.w)} × ${app.fmtCells(ui.draft.h)}`);
         app.render();
         break;
       }
@@ -162,10 +163,8 @@ export function attachInput(app) {
         break;
       }
       case "room-resize": {
-        const r = resizeRect(drag.room, drag.handle, Math.round(cell.x), Math.round(cell.y));
-        drag.room.x = Math.max(0, r.x); drag.room.y = Math.max(0, r.y);
-        drag.room.w = Math.max(1, r.w); drag.room.h = Math.max(1, r.h);
-        app.setHud(`Room: ${drag.room.w} × ${drag.room.h} cells`);
+        applyResize(drag.room, drag.handle, cell);
+        app.setHud(`Room: ${app.fmtCells(drag.room.w)} × ${app.fmtCells(drag.room.h)}`);
         app.render();
         break;
       }
@@ -175,15 +174,40 @@ export function attachInput(app) {
         app.render();
         break;
       }
-      case "compass-move": {
-        plan.compass.x = snapTo(cell.x - drag.gx, step);
-        plan.compass.y = snapTo(cell.y - drag.gy, step);
+      case "furn-resize": {
+        const item = drag.item, def = catalogue[item.kind];
+        if (!def) break;
+        const bb = furnitureCells(plan, item);
+        const r = resizeRect({ x: item.x, y: item.y, w: bb.w, h: bb.h },
+          drag.handle, snapTo(cell.x, step), snapTo(cell.y, step));
+        item.x = r.x; item.y = r.y;
+        const cm = cellMeters(plan);
+        const rotated = ((item.rot || 0) / 90) % 2 !== 0;
+        const localW = rotated ? r.h : r.w, localH = rotated ? r.w : r.h;
+        item.scaleX = Math.max(0.2, localW / (def.wmm / 1000 / cm));
+        item.scaleY = Math.max(0.2, localH / (def.hmm / 1000 / cm));
+        app.setHud(`${def.name}: ${app.fmtCells(r.w)} × ${app.fmtCells(r.h)}`);
         app.render();
         break;
       }
-      case "measure": {
-        ui.measure.x2 = snapTo(cell.x, step);
-        ui.measure.y2 = snapTo(cell.y, step);
+      case "prop-draw": {
+        const cx = Math.round(cell.x), cy = Math.round(cell.y);
+        const x = Math.max(0, Math.min(drag.ox, cx));
+        const y = Math.max(0, Math.min(drag.oy, cy));
+        ui.draft = { x, y, w: Math.abs(cx - drag.ox), h: Math.abs(cy - drag.oy) };
+        app.setHud(`Property section: ${app.fmtCells(ui.draft.w)} × ${app.fmtCells(ui.draft.h)}`);
+        app.render();
+        break;
+      }
+      case "prop-move": {
+        drag.rect.x = Math.max(0, Math.round(cell.x - drag.gx));
+        drag.rect.y = Math.max(0, Math.round(cell.y - drag.gy));
+        app.render();
+        break;
+      }
+      case "prop-resize": {
+        applyResize(drag.rect, drag.handle, cell);
+        app.setHud(`Property section: ${app.fmtCells(drag.rect.w)} × ${app.fmtCells(drag.rect.h)}`);
         app.render();
         break;
       }
@@ -204,8 +228,17 @@ export function attachInput(app) {
         select(ui, "room", room.id);
         app.commit();
         app.beginLabelEdit(room);
-      } else app.render();
-    } else if (drag.type !== "measure") {
+      } else { clearSelection(ui); app.commit(); } // a click on empty deselects
+    } else if (drag.type === "prop-draw") {
+      const d = ui.draft; ui.draft = null;
+      if (d && d.w >= 1 && d.h >= 1) {
+        app.pushUndo();
+        const rect = { id: uid(), x: d.x, y: d.y, w: d.w, h: d.h };
+        plan.property.push(rect);
+        select(ui, "property", rect.id);
+        app.commit();
+      } else { clearSelection(ui); app.commit(); }
+    } else {
       app.commit();
     }
     try { canvas.releasePointerCapture(e.pointerId); } catch {}
@@ -215,6 +248,8 @@ export function attachInput(app) {
   }
   canvas.addEventListener("pointerup", endDrag);
   canvas.addEventListener("pointercancel", endDrag);
+  // Right-drag pans, so suppress the canvas context menu.
+  canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 
   // ---------------- wheel zoom ----------------
   canvas.addEventListener("wheel", (e) => {
@@ -225,12 +260,11 @@ export function attachInput(app) {
     const s = cellPx(plan);
     plan.view.panX = pt.x - before.x * s;
     plan.view.panY = pt.y - before.y * s;
-    app.ui.viewOnly ? app.render() : app.commit();
+    app.commit();
   }, { passive: false });
 
   // ---------------- double-click: rename room ----------------
   canvas.addEventListener("dblclick", (e) => {
-    if (app.ui.viewOnly) return;
     const plan = app.plan, pt = local(e);
     const cell = pxToCells(plan, pt.x, pt.y);
     const hit = roomAt(plan, cell.x, cell.y);
@@ -242,7 +276,6 @@ export function attachInput(app) {
     if (e.code === "Space") spaceDown = true;
     const t = e.target;
     if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT")) return;
-    if (app.ui.viewOnly) return;
     const plan = app.plan, ui = app.ui;
 
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
@@ -251,7 +284,8 @@ export function attachInput(app) {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") { e.preventDefault(); app.redo(); return; }
 
     if (e.key === "Escape") {
-      ui.placingKind = null; ui.measure = null; clearSelection(ui); app.commit(); return;
+      ui.draft = null;
+      clearSelection(ui); app.commit(); return;
     }
     if ((e.key === "Delete" || e.key === "Backspace") && ui.selType) {
       e.preventDefault(); app.deleteSelected(); return;
@@ -284,13 +318,13 @@ export function attachInput(app) {
     if (ui.selType === "room") {
       const r = plan.rooms.find((x) => x.id === ui.selId);
       if (r) { r.x = Math.max(0, r.x + dx); r.y = Math.max(0, r.y + dy); }
+    } else if (ui.selType === "property") {
+      const r = selectedProp(plan, ui);
+      if (r) { r.x = Math.max(0, r.x + dx); r.y = Math.max(0, r.y + dy); }
     } else if (ui.selType === "furniture") {
       const f = plan.furniture.find((x) => x.id === ui.selId);
       const step = snapStep(plan);
       if (f) { f.x += dx * step; f.y += dy * step; }
-    } else if (ui.selType === "compass" && plan.compass) {
-      const step = snapStep(plan);
-      plan.compass.x += dx * step; plan.compass.y += dy * step;
     }
   }
 
@@ -298,17 +332,27 @@ export function attachInput(app) {
 
   function hoverCursor(plan, ui, pt) {
     if (spaceDown) { canvas.style.cursor = "grab"; return; }
+    const cell = pxToCells(plan, pt.x, pt.y);
     let cur = "default";
+
+    if (ui.tool === "property") {
+      const sp = selectedProp(plan, ui);
+      const ph = sp && handleAt(plan, sp, pt.x, pt.y);
+      if (ph) cur = handleCursor(ph);
+      else cur = propertyRectAt(plan, cell.x, cell.y) ? "move" : "crosshair";
+      canvas.style.cursor = cur;
+      return;
+    }
+
     const sr = selectedRoom(plan, ui);
     const h = sr && handleAt(plan, sr, pt.x, pt.y);
+    const sf = selectedFurniture(plan, ui);
+    const fh = sf && furnitureHandleAt(plan, sf, pt.x, pt.y);
     if (h) cur = handleCursor(h);
-    else if (ui.tool === "room") cur = "crosshair";
-    else if (ui.tool === "furniture" && ui.placingKind) cur = "copy";
-    else if (ui.tool === "measure") cur = "crosshair";
-    else {
-      const cell = pxToCells(plan, pt.x, pt.y);
-      if (furnitureAt(plan, cell.x, cell.y) || roomAt(plan, cell.x, cell.y)) cur = "move";
-    }
+    else if (fh) cur = handleCursor(fh);
+    else if (furnitureAt(plan, cell.x, cell.y)) cur = "move";
+    else if (ui.tool === "room") cur = roomAt(plan, cell.x, cell.y) ? "move" : "crosshair";
+    else if (roomAt(plan, cell.x, cell.y)) cur = "move";
     canvas.style.cursor = cur;
   }
 }
