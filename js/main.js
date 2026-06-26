@@ -114,7 +114,7 @@ app.addFurniture = (kind) => {
     y = h0 >= b.h ? b.y + (b.h - h0) / 2 : Math.min(Math.max(y, b.y), b.y + b.h - h0);
   }
   const item = {
-    id: store.uid(), kind, rot: 0, scaleX: 1, scaleY: 1, flipX: false, label: "",
+    id: store.uid(), kind, rot: 0, scaleX: 1, scaleY: 1, flipX: false, flipY: false, label: "",
     x: snapTo(x, step), y: snapTo(y, step),
   };
   app.pushUndo();

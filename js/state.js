@@ -136,6 +136,7 @@ function normalizeFurniture(f) {
     scaleX: clampNum(f.scaleX, 0.1, 50, 1),
     scaleY: clampNum(f.scaleY, 0.1, 50, 1),
     flipX: f.flipX === true,
+    flipY: f.flipY === true,
     label: typeof f.label === "string" ? f.label.slice(0, 40) : "",
   };
 }

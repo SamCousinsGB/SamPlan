@@ -310,7 +310,7 @@ function drawFurniture(ctx, plan, palette, fontScale = 1) {
     ctx.save();
     ctx.translate(center.x, center.y);
     ctx.rotate(((item.rot || 0) * Math.PI) / 180);
-    if (item.flipX) ctx.scale(-1, 1);            // mirror horizontally
+    if (item.flipX || item.flipY) ctx.scale(item.flipX ? -1 : 1, item.flipY ? -1 : 1);
     ctx.translate(-nw / 2, -nh / 2);
     ctx.strokeStyle = palette.furniture;
     ctx.fillStyle = palette.furnitureFill;
@@ -320,7 +320,8 @@ function drawFurniture(ctx, plan, palette, fontScale = 1) {
     ctx.restore();
 
     // Optional label, laid along the item's longest axis so it fits: horizontal
-    // for wide pieces, vertical for tall ones. Shrinks if still too long.
+    // for wide pieces, vertical for tall ones. Shrinks if still too long, and
+    // sits on a small backing tag so it stays readable over the symbol's lines.
     if (item.label) {
       const shortPx = Math.min(w, h) * s, longPx = Math.max(w, h) * s;
       const vertical = h > w;
@@ -329,11 +330,18 @@ function drawFurniture(ctx, plan, palette, fontScale = 1) {
       ctx.translate(center.x, center.y);
       if (vertical) ctx.rotate(-Math.PI / 2);
       ctx.font = `600 ${size}px system-ui, sans-serif`;
-      const tw = ctx.measureText(item.label).width;
-      if (tw > longPx * 0.9) {
-        size *= (longPx * 0.9) / tw;
+      let tw = ctx.measureText(item.label).width;
+      if (tw > longPx * 0.92) {
+        size *= (longPx * 0.92) / tw;
         ctx.font = `600 ${size}px system-ui, sans-serif`;
+        tw = ctx.measureText(item.label).width;
       }
+      // backing tag — clears the symbol behind the text
+      const padX = size * 0.4, padY = size * 0.24;
+      const bw = tw + padX * 2, bh = size + padY * 2;
+      ctx.fillStyle = palette.furnitureFill || "#ffffff";
+      roundRect(ctx, -bw / 2, -bh / 2, bw, bh, Math.min(6 * fontScale, bh * 0.3));
+      ctx.fill();
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillStyle = palette.text;
       ctx.fillText(item.label, 0, 0);

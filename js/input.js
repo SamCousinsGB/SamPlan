@@ -5,7 +5,7 @@
 
 import {
   pxToCells, snapTo, snapStep, snapStepFine, cellPx,
-  handleAt, handleCursor, resizeRect,
+  handleAt, handleCursor, resizeRect, resizeRectFlip,
 } from "./grid.js";
 import { roomAt, propertyRectAt, propertyRects } from "./rooms.js";
 import { furnitureCells, catalogue } from "./furniture.js";
@@ -44,6 +44,14 @@ export function attachInput(app) {
   function furnitureHandleAt(plan, item, px, py) {
     const bb = furnitureCells(plan, item);
     return handleAt(plan, { x: item.x, y: item.y, w: bb.w, h: bb.h }, px, py);
+  }
+  // A mirror across a screen axis maps to a local flip that depends on rotation
+  // (at 90°/270° the item's local axes are swapped on screen).
+  function flipScreenX(item) {
+    if (((item.rot || 0) / 90) % 2 === 0) item.flipX = !item.flipX; else item.flipY = !item.flipY;
+  }
+  function flipScreenY(item) {
+    if (((item.rot || 0) / 90) % 2 === 0) item.flipY = !item.flipY; else item.flipX = !item.flipX;
   }
 
   // Clamp a resized rect into the x,y >= 0 region WITHOUT moving the opposite
@@ -183,14 +191,18 @@ export function attachInput(app) {
         if (!def) break;
         const fstep = snapStepFine(plan);
         const bb = furnitureCells(plan, item);
-        const r = resizeRect({ x: item.x, y: item.y, w: bb.w, h: bb.h },
-          drag.handle, snapTo(cell.x, fstep), snapTo(cell.y, fstep));
+        // Allow dragging past the opposite edge: the item flips instead of jamming.
+        const r = resizeRectFlip({ x: item.x, y: item.y, w: bb.w, h: bb.h },
+          drag.handle, snapTo(cell.x, fstep), snapTo(cell.y, fstep), Math.max(fstep, 0.5));
         item.x = r.x; item.y = r.y;
+        if (r.flipX) flipScreenX(item);
+        if (r.flipY) flipScreenY(item);
+        drag.handle = r.handle;  // follow the handle through the flip
         const cm = cellMeters(plan);
         const rotated = ((item.rot || 0) / 90) % 2 !== 0;
         const localW = rotated ? r.h : r.w, localH = rotated ? r.w : r.h;
-        item.scaleX = Math.max(0.2, localW / (def.wmm / 1000 / cm));
-        item.scaleY = Math.max(0.2, localH / (def.hmm / 1000 / cm));
+        item.scaleX = Math.max(0.05, localW / (def.wmm / 1000 / cm));
+        item.scaleY = Math.max(0.05, localH / (def.hmm / 1000 / cm));
         app.setHud(`${def.name}: ${app.fmtCells(r.w)} × ${app.fmtCells(r.h)}`);
         app.render();
         break;

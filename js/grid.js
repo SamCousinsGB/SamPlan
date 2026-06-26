@@ -125,6 +125,25 @@ export function handleCursor(id) {
   }
 }
 
+// Like resizeRect but lets the dragged edge cross the opposite (anchored) edge:
+// the rect flips to the other side instead of jamming at minimum size. Reports
+// which axes inverted and the handle now under the cursor (so the drag can keep
+// going). The anchored (opposite) edge never moves.
+export function resizeRectFlip(rect, handle, sx, sy, minSize = 1) {
+  let x = rect.x, y = rect.y, x2 = x + rect.w, y2 = y + rect.h;
+  let w = handle.includes("w"), e = handle.includes("e");
+  let n = handle.includes("n"), s = handle.includes("s");
+  if (w) x = sx; if (e) x2 = sx;
+  if (n) y = sy; if (s) y2 = sy;
+  let flipX = false, flipY = false;
+  if (x2 < x) { const t = x; x = x2; x2 = t; flipX = true; const tw = w; w = e; e = tw; }
+  if (y2 < y) { const t = y; y = y2; y2 = t; flipY = true; const tn = n; n = s; s = tn; }
+  if (x2 - x < minSize) { if (w) x = x2 - minSize; else x2 = x + minSize; }
+  if (y2 - y < minSize) { if (n) y = y2 - minSize; else y2 = y + minSize; }
+  const nh = (n ? "n" : s ? "s" : "") + (w ? "w" : e ? "e" : "");
+  return { x, y, w: x2 - x, h: y2 - y, flipX, flipY, handle: nh || handle };
+}
+
 // Apply a resize-handle drag to a rect (all in cells, already snapped).
 // Returns a new {x,y,w,h} with a minimum size of 1 cell, never inverted.
 export function resizeRect(rect, handle, snappedX, snappedY) {
